@@ -28,8 +28,9 @@ class _MemberScreenState extends State<MemberScreen> {
     _future ??= context.api.member(widget.memberId);
   }
 
-  void _reload() =>
-      setState(() => _future = context.api.member(widget.memberId));
+  void _reload() => setState(() {
+    _future = context.api.member(widget.memberId);
+  });
 
   @override
   Widget build(BuildContext context) {

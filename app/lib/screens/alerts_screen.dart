@@ -32,7 +32,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Future<List<Alert>> _fetch() =>
       context.api.alerts(status: _filter, groupId: _groupId);
 
-  void _reload() => setState(() => _future = _fetch());
+  void _reload() => setState(() {
+    _future = _fetch();
+  });
 
   Future<void> _acknowledge(Alert alert) async {
     final note = await showDialog<String>(

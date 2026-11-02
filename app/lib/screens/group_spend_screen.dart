@@ -39,7 +39,9 @@ class _GroupSpendScreenState extends State<GroupSpendScreen> {
   Future<GroupSpend> _fetch() =>
       context.api.groupSpend(widget.group.id, policyYearId: _policyYearId);
 
-  void _reload() => setState(() => _future = _fetch());
+  void _reload() => setState(() {
+    _future = _fetch();
+  });
 
   @override
   Widget build(BuildContext context) {

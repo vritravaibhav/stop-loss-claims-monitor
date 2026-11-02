@@ -23,7 +23,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
     _future ??= context.api.groups();
   }
 
-  void _reload() => setState(() => _future = context.api.groups());
+  void _reload() => setState(() {
+    _future = context.api.groups();
+  });
 
   @override
   Widget build(BuildContext context) {

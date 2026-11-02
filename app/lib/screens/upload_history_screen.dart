@@ -24,7 +24,9 @@ class _UploadHistoryScreenState extends State<UploadHistoryScreen> {
     _future ??= context.api.uploads();
   }
 
-  void _reload() => setState(() => _future = context.api.uploads());
+  void _reload() => setState(() {
+    _future = context.api.uploads();
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -149,8 +151,9 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
     _future ??= context.api.upload(widget.uploadId);
   }
 
-  void _reload() =>
-      setState(() => _future = context.api.upload(widget.uploadId));
+  void _reload() => setState(() {
+    _future = context.api.upload(widget.uploadId);
+  });
 
   @override
   Widget build(BuildContext context) => Scaffold(
