@@ -29,6 +29,15 @@ ThemeData buildTheme(Brightness brightness) {
     ),
     snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
     dividerTheme: DividerThemeData(color: scheme.outlineVariant, space: 1),
+    // Pushed pages zoom in place on every platform. The defaults include the
+    // Cupertino slide-in from the right (Flutter web on macOS/iOS reports
+    // those platforms), and nothing in this app slides in from the side.
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: {
+        for (final platform in TargetPlatform.values)
+          platform: const ZoomPageTransitionsBuilder(),
+      },
+    ),
   );
 }
 
