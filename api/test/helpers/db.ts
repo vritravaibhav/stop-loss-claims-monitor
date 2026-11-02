@@ -38,6 +38,8 @@ export async function setupTestDb(name: string): Promise<TestDb> {
     schema,
     createSchema: true,
     checkOrder: true,
+    // node-pg-migrate's advisory lock is database-wide; each test file migrates its own schema in parallel.
+    noLock: true,
     verbose: false,
     log: () => undefined,
   });
