@@ -1,0 +1,6 @@
+group_id,group_name,policy_start,policy_end,specific_deductible
+GA,Group A,2026-01-01,2026-12-31,50000
+GB,Group B,2025-07-01,2026-06-30,75000
+GB,Group B,2026-07-01,2027-06-30,80000
+GC,Group C,2026-04-01,2027-03-31,60000
+GD,Group D,2026-01-01,2026-12-31,50000

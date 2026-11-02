@@ -1,0 +1,3 @@
+group_id,member_id,policy_start,specific_deductible
+GA,A-0007,2026-01-01,120000
+GC,C-0011,2026-04-01,100000

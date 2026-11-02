@@ -1,0 +1,2 @@
+# Store CSVs byte-for-byte (CRLF line endings)
+*.csv -text
