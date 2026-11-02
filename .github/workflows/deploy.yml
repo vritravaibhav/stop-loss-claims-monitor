@@ -3,9 +3,11 @@
 # github_actions_variables`, app/config/prod.json committed, and a "production" environment
 # (add required reviewers there).
 #
-# Order: build + push image -> migrate (Cloud Run Job, waits) -> roll out API -> build and
-# deploy the web app. Migrations run before new code serves traffic, so they must be
-# backwards compatible with the revision that is still live (expand/contract).
+# Order: build + push image -> migrate (Cloud Run Job running the image with
+# --app.mode=migrate, i.e. Flyway; waits) -> roll out API -> build and deploy the web app.
+# Only the job migrates: the service runs with SPRING_FLYWAY_ENABLED=false (Terraform).
+# Migrations run before new code serves traffic, so they must be backwards compatible with
+# the revision that is still live (expand/contract).
 
 name: Deploy
 
@@ -33,7 +35,7 @@ env:
   SERVICE: stoploss-api
   MIGRATE_JOB: stoploss-migrate
   HOSTING_URL: ${{ vars.FIREBASE_HOSTING_URL || format('https://{0}.web.app', vars.GCP_PROJECT_ID) }}
-  NODE_VERSION: "22"
+  NODE_VERSION: "22" # for firebase-tools only
   FLUTTER_VERSION: "3.47.4"
   FIREBASE_TOOLS_VERSION: "15.34.2"
 
@@ -76,8 +78,9 @@ jobs:
       - name: Build and push API image
         run: |
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-          # Tags are immutable in Artifact Registry, so re-running a deploy for the same
-          # commit (e.g. to roll back) reuses the existing image.
+          # api/Dockerfile builds the jar itself (multi-stage Maven build), as it must for
+          # `docker compose up --build`. Tags are immutable in Artifact Registry, so
+          # re-running a deploy for the same commit (e.g. to roll back) reuses the image.
           if gcloud artifacts docker images describe "$IMAGE" > /dev/null 2>&1; then
             echo "$IMAGE already exists, reusing it"
           else
@@ -87,6 +90,7 @@ jobs:
 
       - name: Run database migrations
         if: inputs.run_migrations
+        # The job's args (--app.mode=migrate) are set in Terraform; only the image changes.
         run: |
           gcloud run jobs update "$MIGRATE_JOB" --image "$IMAGE" \
             --region "$REGION" --project "$PROJECT_ID" --quiet
