@@ -10,7 +10,7 @@ variable "region" {
 }
 
 variable "api_image" {
-  description = "Initial API image for the Cloud Run service and migration job, e.g. us-central1-docker.pkg.dev/<project>/stoploss/api:<git-sha>. Later deploys change the image through deploy.yml; Terraform ignores image drift."
+  description = "Initial API image (Spring Boot, ENTRYPOINT java -jar) for the Cloud Run service and migration job, e.g. us-central1-docker.pkg.dev/<project>/stoploss/api:<git-sha>. Later deploys change the image through deploy.yml; Terraform ignores image drift."
   type        = string
 }
 
@@ -54,7 +54,7 @@ variable "db_disk_size_gb" {
 }
 
 variable "db_password_version" {
-  description = "Bump to rotate the database password: a new random password is written to Cloud SQL and to the DATABASE_URL secret in the same apply. Redeploy the API afterwards (the secret is read at revision start)."
+  description = "Bump to rotate the database password: a new random password is written to Cloud SQL and to the stoploss-db-password secret in the same apply. Redeploy the API afterwards (the secret is read at revision start)."
   type        = number
   default     = 1
 }
@@ -66,13 +66,13 @@ variable "deletion_protection" {
 }
 
 variable "api_min_instances" {
-  description = "Cloud Run minimum instances. 0 = scale to zero (cold starts, no idle cost)."
+  description = "Cloud Run minimum instances. 0 = scale to zero (no idle cost, but every cold start pays JVM + Spring startup)."
   type        = number
   default     = 0
 }
 
 variable "api_max_instances" {
-  description = "Cloud Run maximum instances. Keep max_instances x pg pool size (node-postgres default 10) below the DB tier's max_connections."
+  description = "Cloud Run maximum instances. Keep max_instances x pool size (HikariCP default 10) below the DB tier's max_connections."
   type        = number
   default     = 2
 }
@@ -84,9 +84,9 @@ variable "api_cpu" {
 }
 
 variable "api_memory" {
-  description = "Memory per API instance."
+  description = "Memory per API instance and for the migration job. The image sizes the JVM heap with MaxRAMPercentage=75."
   type        = string
-  default     = "512Mi"
+  default     = "1Gi"
 }
 
 variable "api_concurrency" {

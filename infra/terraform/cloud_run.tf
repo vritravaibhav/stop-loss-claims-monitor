@@ -1,5 +1,14 @@
+# Both the service and the migration job run the same image (ENTRYPOINT
+# java -jar /app/stoploss-api.jar) and reach Cloud SQL through the Cloud SQL Java socket
+# factory named in local.jdbc_url. No Cloud SQL volume is mounted: the socket factory talks
+# to the Cloud SQL Admin API itself, authorised by roles/cloudsql.client on the runtime SA.
+
 locals {
-  cloudsql_mount = "/cloudsql"
+  datasource_env = {
+    SPRING_DATASOURCE_URL      = local.jdbc_url
+    SPRING_DATASOURCE_USERNAME = google_sql_user.app.name
+    FIREBASE_PROJECT_ID        = var.project_id
+  }
 }
 
 resource "google_cloud_run_v2_service" "api" {
@@ -22,38 +31,37 @@ resource "google_cloud_run_v2_service" "api" {
       max_instance_count = var.api_max_instances
     }
 
-    volumes {
-      name = "cloudsql"
-      cloud_sql_instance {
-        instances = [google_sql_database_instance.main.connection_name]
-      }
-    }
-
     containers {
       name  = "api"
       image = var.api_image
-      # No command/args: the image's default (npm start) serves the API.
+      # No command/args: the image ENTRYPOINT serves the API. Cloud Run sets PORT itself.
 
       ports {
         container_port = 8080
       }
 
-      env {
-        name  = "FIREBASE_PROJECT_ID"
-        value = var.project_id
+      dynamic "env" {
+        for_each = local.datasource_env
+        content {
+          name  = env.key
+          value = env.value
+        }
       }
       env {
-        name  = "GCLOUD_PROJECT"
-        value = var.project_id
-      }
-      env {
-        name = "DATABASE_URL"
+        name = "SPRING_DATASOURCE_PASSWORD"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.database_url.secret_id
+            secret  = google_secret_manager_secret.db_password.secret_id
             version = "latest"
           }
         }
+      }
+      # Only the stoploss-migrate job migrates. A revision never changes the schema at
+      # startup, so several instances starting at once don't all run Flyway, and the
+      # runtime could later use a DB role without DDL rights.
+      env {
+        name  = "SPRING_FLYWAY_ENABLED"
+        value = "false"
       }
 
       resources {
@@ -62,15 +70,11 @@ resource "google_cloud_run_v2_service" "api" {
           memory = var.api_memory
         }
         cpu_idle          = true # CPU billed only while handling requests
-        startup_cpu_boost = true
+        startup_cpu_boost = true # JVM startup is CPU-bound
       }
 
-      volume_mounts {
-        name       = "cloudsql"
-        mount_path = local.cloudsql_mount
-      }
-
-      # A revision only receives traffic once /healthz answers (up to ~60s).
+      # A revision only receives traffic once /healthz answers (up to ~120s: JVM start,
+      # Spring context, connection pool).
       startup_probe {
         http_get {
           path = "/healthz"
@@ -78,7 +82,7 @@ resource "google_cloud_run_v2_service" "api" {
         }
         period_seconds    = 3
         timeout_seconds   = 2
-        failure_threshold = 20
+        failure_threshold = 40
       }
     }
   }
@@ -95,8 +99,8 @@ resource "google_cloud_run_v2_service" "api" {
 
   depends_on = [
     google_project_iam_member.api_cloudsql_client,
-    google_secret_manager_secret_iam_member.api_database_url,
-    google_secret_manager_secret_version.database_url,
+    google_secret_manager_secret_iam_member.api_db_password,
+    google_secret_manager_secret_version.db_password,
   ]
 }
 
@@ -111,10 +115,11 @@ resource "google_cloud_run_v2_service_iam_member" "api_public" {
   member   = "allUsers"
 }
 
-# Runs `npm run migrate` with the same image and DATABASE_URL. deploy.yml points it at the new
-# image and executes it (and waits) before rolling out the service, so the schema is migrated
-# before new code serves traffic. Migrations must stay backwards compatible with the
-# previous revision (expand/contract), since it keeps serving until the rollout finishes.
+# Runs Flyway once (--app.mode=migrate) with the same image and credentials, then exits.
+# deploy.yml points it at the new image and executes it (and waits) before rolling out the
+# service, so the schema is migrated before new code serves traffic. Migrations must stay
+# backwards compatible with the previous revision (expand/contract), since it keeps serving
+# until the rollout finishes.
 resource "google_cloud_run_v2_job" "migrate" {
   name                = "stoploss-migrate"
   location            = var.region
@@ -129,23 +134,23 @@ resource "google_cloud_run_v2_job" "migrate" {
       max_retries     = 0 # a failed migration should fail the deploy, not loop
       timeout         = "600s"
 
-      volumes {
-        name = "cloudsql"
-        cloud_sql_instance {
-          instances = [google_sql_database_instance.main.connection_name]
-        }
-      }
-
       containers {
         image = var.api_image
-        # args replaces the image CMD and keeps its ENTRYPOINT (tini).
-        args = ["npm", "run", "migrate"]
+        # Appended to the image ENTRYPOINT: java -jar /app/stoploss-api.jar --app.mode=migrate
+        args = ["--app.mode=migrate"]
 
+        dynamic "env" {
+          for_each = local.datasource_env
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
         env {
-          name = "DATABASE_URL"
+          name = "SPRING_DATASOURCE_PASSWORD"
           value_source {
             secret_key_ref {
-              secret  = google_secret_manager_secret.database_url.secret_id
+              secret  = google_secret_manager_secret.db_password.secret_id
               version = "latest"
             }
           }
@@ -154,13 +159,8 @@ resource "google_cloud_run_v2_job" "migrate" {
         resources {
           limits = {
             cpu    = "1"
-            memory = "512Mi"
+            memory = var.api_memory
           }
-        }
-
-        volume_mounts {
-          name       = "cloudsql"
-          mount_path = local.cloudsql_mount
         }
       }
     }
@@ -176,7 +176,7 @@ resource "google_cloud_run_v2_job" "migrate" {
 
   depends_on = [
     google_project_iam_member.api_cloudsql_client,
-    google_secret_manager_secret_iam_member.api_database_url,
-    google_secret_manager_secret_version.database_url,
+    google_secret_manager_secret_iam_member.api_db_password,
+    google_secret_manager_secret_version.db_password,
   ]
 }

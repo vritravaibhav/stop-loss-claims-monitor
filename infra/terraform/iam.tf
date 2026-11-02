@@ -7,7 +7,7 @@ resource "google_service_account" "api" {
   depends_on = [google_project_service.enabled]
 }
 
-# Connect through the Cloud SQL connector. cloudsql.client is project-level (Cloud SQL has
+# Connect through the Cloud SQL Java socket factory. cloudsql.client is project-level (Cloud SQL has
 # no per-instance IAM bindings); it grants connect, not admin.
 resource "google_project_iam_member" "api_cloudsql_client" {
   project = var.project_id
@@ -15,9 +15,9 @@ resource "google_project_iam_member" "api_cloudsql_client" {
   member  = google_service_account.api.member
 }
 
-# Read only the DATABASE_URL secret, not every secret in the project.
-resource "google_secret_manager_secret_iam_member" "api_database_url" {
-  secret_id = google_secret_manager_secret.database_url.id
+# Read only the DB password secret, not every secret in the project.
+resource "google_secret_manager_secret_iam_member" "api_db_password" {
+  secret_id = google_secret_manager_secret.db_password.id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.api.member
 }
