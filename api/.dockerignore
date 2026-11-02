@@ -1,0 +1,13 @@
+# Keep the build context small and never ship local secrets or host-built artefacts
+# (node_modules built on macOS would carry the wrong native binaries).
+node_modules
+dist
+coverage
+*.log
+.env
+.env.*
+!.env.example
+.git
+.DS_Store
+Dockerfile
+.dockerignore

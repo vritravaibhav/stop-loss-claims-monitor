@@ -1,0 +1,25 @@
+# Host build output and tool caches: rebuilt inside the image (host .dart_tool paths would
+# point at the macOS SDK).
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+coverage/
+# Native platform folders aren't needed for a web build.
+android/
+ios/
+macos/
+linux/
+windows/
+# Editor / VCS noise
+.idea/
+.vscode/
+*.iml
+.git
+.DS_Store
+*.log
+Dockerfile
+.dockerignore
