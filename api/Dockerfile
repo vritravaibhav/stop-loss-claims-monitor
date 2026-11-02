@@ -1,38 +1,42 @@
-# API image. Build context: ./api. Used by docker compose (command: npm run start:docker)
-# and by Cloud Run (default CMD: npm start) / the migration Cloud Run Job (npm run migrate).
+# API image (build context: ./api). Builds the jar from a clean checkout; nothing from the host's target/ is used.
 #
-# Contract with the api package (docs/SPEC.md "API process contract"):
-#   - package.json + package-lock.json (npm ci needs the lockfile)
-#   - `npm run build` emits everything that runs in production into dist/ (server, seed and
-#     load-sample scripts): the runtime image has no TypeScript toolchain.
-#   - SQL migrations in migrations/; node-pg-migrate (and anything seed/migrate need) must be
-#     a production dependency, because dev dependencies are pruned.
+#   docker build -t stoploss-api api
+#   docker run --rm -p 8080:8080 -e SPRING_DATASOURCE_URL=... stoploss-api               # web server
+#   docker run --rm ... stoploss-api --app.mode=migrate|seed|load-sample                  # one-shot jobs
 #
-# No BuildKit-only syntax (cache mounts, heredocs) so it also builds with the legacy builder.
+# Process contract: docs/SPEC.md "API process contract". No BuildKit-only syntax, so the legacy builder works too.
 
-FROM node:22-alpine AS build
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-RUN npm run build \
- && npm prune --omit=dev
+FROM eclipse-temurin:25-jdk AS build
+WORKDIR /src
+# Dependency layer: re-downloaded only when the pom (or the wrapper) changes. The wrapper fetches Maven itself
+# (with javac + tar when the image has no curl/wget). go-offline misses a few runtime transitive dependencies, so the
+# package step below stays online and fetches whatever is left.
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline
+COPY src/ src/
+# Tests need Docker (Testcontainers) and run in CI, not in the image build.
+RUN ./mvnw -B -q package -DskipTests \
+ && java -Djarmode=tools -jar target/stoploss-api.jar extract --layers --destination /extracted
 
-FROM node:22-alpine AS runtime
-# tini as PID 1 forwards SIGTERM (docker stop, Cloud Run scale-down) through the
-# `npm run migrate && npm run seed && npm start` chain and reaps zombies.
-RUN apk add --no-cache tini
-ENV NODE_ENV=production \
-    PORT=8080 \
-    NPM_CONFIG_UPDATE_NOTIFIER=false \
-    NPM_CONFIG_FUND=false
+FROM eclipse-temurin:25-jre
+# curl for the compose healthcheck (curl -fsS http://localhost:8080/healthz).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
+# Spring Boot layers, least to most often changing; together they are /app/stoploss-api.jar + /app/lib/.
 # Files stay root-owned: the runtime user can read the app but not modify it.
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/migrations ./migrations
-USER node
+COPY --from=build /extracted/dependencies/ ./
+COPY --from=build /extracted/spring-boot-loader/ ./
+COPY --from=build /extracted/snapshot-dependencies/ ./
+COPY --from=build /extracted/application/ ./
+ENV PORT=8080 \
+    DATA_DIR=/data \
+    JDK_JAVA_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+USER app
 EXPOSE 8080
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["npm", "start"]
+# exec form: java is PID 1 and gets SIGTERM directly (graceful shutdown); extra args are passed through, so
+# `docker compose run api --app.mode=load-sample` works.
+ENTRYPOINT ["java","-jar","/app/stoploss-api.jar"]

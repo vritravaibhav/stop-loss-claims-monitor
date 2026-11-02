@@ -1,8 +1,8 @@
-# Keep the build context small and never ship local secrets or host-built artefacts
-# (node_modules built on macOS would carry the wrong native binaries).
-node_modules
-dist
-coverage
+# The image builds the jar itself: never send host build output, IDE files or local secrets.
+target/
+.idea/
+.vscode/
+*.iml
 *.log
 .env
 .env.*
@@ -11,3 +11,7 @@ coverage
 .DS_Store
 Dockerfile
 .dockerignore
+README.md
+# Node leftovers, if any are lying around in a working copy
+node_modules/
+dist/
