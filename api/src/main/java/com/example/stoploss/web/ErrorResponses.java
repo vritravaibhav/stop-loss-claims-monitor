@@ -2,6 +2,7 @@ package com.example.stoploss.web;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +12,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** The one error body shape: {@code {"error": "<message>"}}. */
 @Component
 public class ErrorResponses {
+  static final MediaType JSON_UTF8 = new MediaType("application", "json", StandardCharsets.UTF_8);
   private final JsonMapper json;
 
   public ErrorResponses(JsonMapper json) {
@@ -21,8 +23,12 @@ public class ErrorResponses {
     return Map.of("error", message);
   }
 
+  /**
+   * For exception handlers. The charset is explicit because DispatcherServlet clears the response content type (and
+   * with it the forced UTF-8 encoding) before an exception handler runs.
+   */
   public static ResponseEntity<Map<String, String>> entity(int status, String message) {
-    return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(body(message));
+    return ResponseEntity.status(status).contentType(JSON_UTF8).body(body(message));
   }
 
   /** For filters, which answer before Spring MVC is involved. */

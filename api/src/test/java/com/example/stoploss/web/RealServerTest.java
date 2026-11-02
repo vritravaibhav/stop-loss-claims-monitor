@@ -107,12 +107,20 @@ class RealServerTest extends DbTest {
         HttpResponse.BodyHandlers.ofString());
     assertThat(r.statusCode()).isEqualTo(401);
     assertThat(r.body()).isEqualTo("{\"error\":\"Missing bearer token\"}");
-    assertThat(r.headers().firstValue("Content-Type")).hasValueSatisfying(v -> assertThat(v).startsWith("application/json"));
+    assertThat(r.headers().firstValue("Content-Type")).hasValue("application/json;charset=UTF-8");
     assertThat(r.headers().firstValue("Cache-Control")).hasValue("no-store");
+    // errors from exception handlers keep the charset and the no-store header too
+    HttpResponse<String> notFound = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/nope"))
+        .header("Authorization", bearer(ANALYST)).build(), HttpResponse.BodyHandlers.ofString());
+    assertThat(notFound.statusCode()).isEqualTo(404);
+    assertThat(notFound.body()).isEqualTo("{\"error\":\"Not found\"}");
+    assertThat(notFound.headers().firstValue("Content-Type")).hasValue("application/json;charset=UTF-8");
+    assertThat(notFound.headers().firstValue("Cache-Control")).hasValue("no-store");
     HttpResponse<String> health = http.send(
         HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/healthz")).build(),
         HttpResponse.BodyHandlers.ofString());
     assertThat(health.statusCode()).isEqualTo(200);
     assertThat(health.body()).isEqualTo("{\"ok\":true}");
+    assertThat(health.headers().firstValue("Content-Type")).hasValue("application/json;charset=UTF-8");
   }
 }
