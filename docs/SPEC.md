@@ -35,11 +35,13 @@ docs/SPEC.md    this file
 - `npm run migrate` → runs migrations up (needs `DATABASE_URL`).
 - `npm run seed` → idempotent: upserts brokerages, groups, policy years, members, lasers, app users from `DATA_DIR`
   (default `../data`, in Docker `/data`), and if `FIREBASE_AUTH_EMULATOR_HOST` is set (or `SEED_FIREBASE_USERS=true`)
-  creates/updates the Firebase Auth users with password `SEED_PASSWORD` (default `Password123!`).
+  creates/updates the Firebase Auth users with password `SEED_PASSWORD` (default `Password123!`, emulator only: a
+  real Firebase project needs an explicit `SEED_PASSWORD`), always with `emailVerified: true`.
 - `npm run load-sample` → uploads every file in `$DATA_DIR/claims` in file-name order through the same ingest code
   as the HTTP upload (dev convenience, not run by default).
 - `npm start` → `node dist/src/server.js` (or equivalent), listens on `PORT` (default 8080).
-- `npm run start:docker` → migrate, seed, then start (single entrypoint for compose).
+- `npm run start:docker` → migrate, seed, then `exec node dist/src/server.js` (single entrypoint for compose; `exec`
+  so the SIGTERM npm forwards reaches node, which drains requests and closes the pool).
 - `npm test` → vitest; needs `DATABASE_URL` pointing at a disposable Postgres (tests create/truncate their own schema).
 - Env: `DATABASE_URL`, `PORT`, `DATA_DIR`, `FIREBASE_AUTH_EMULATOR_HOST` (e.g. `firebase:9099`),
   `GCLOUD_PROJECT` / `FIREBASE_PROJECT_ID` (`demo-stoploss` locally), `CORS_ORIGINS` (comma list, dev only),
@@ -61,7 +63,9 @@ GC and GD belong to no brokerage (analyst-only).
 - Client signs in with Firebase Auth, sends `Authorization: Bearer <Firebase ID token>` on every `/api/*` call.
 - API verifies the token with `firebase-admin` (`verifyIdToken`; emulator honoured via `FIREBASE_AUTH_EMULATOR_HOST`),
   takes the **email**, and looks the user up in the `app_user` table. The DB row is the source of truth for role and
-  brokerage — not client claims. Unknown user → `403`.
+  brokerage — not client claims. Unknown user → `403`. Because users are matched by email, the token's email must be
+  verified (`email_verified`), else `403`.
+- The emulator (unsigned tokens) is honoured only when the project id is `demo-*`; otherwise the API refuses to start.
 - Token verification is injected (`createApp({ verifyToken })`) so tests use a fake verifier; the fake must never be
   reachable in production code paths.
 - Broker scoping is applied **in SQL** (every group-scoped query joins through the caller's visible groups). A broker
@@ -115,7 +119,8 @@ Spend & deductibles
 - Policy year of a claim = the group's policy year whose `[start, end]` (inclusive) contains the **service date**.
   None → claim counts toward no spend (still stored; shown as "outside policy years" in drill-down).
 - Deductible = laser for (member, policy year) if present, else the policy year's specific deductible.
-- Spend = sum of effective amounts of current versions in that policy year. `% used = spend / deductible × 100`.
+- Spend = sum of effective amounts of current versions in that policy year. `% used = spend / deductible × 100`,
+  **truncated** (not rounded) to 1 dp, so a member just under a threshold never displays it (49.96 → 49.9).
   `excess = max(0, spend − deductible)`.
 
 Alerts
@@ -168,25 +173,29 @@ GET  /api/groups/:groupId/spend?policyYearId=<id>          (default: currentPoli
       members: [{ memberId, firstName, lastName, relationship, spend, deductible, hasLaser,
                   pctUsed, excess, claimCount, alertThresholds: [50,75] }] }
   members sorted by pctUsed desc, then memberId. All members of the group are included (zero spend too).
+  claimCount = current claims in that policy year (reversed ones included). policyYearId of another group → 404,
+  malformed → 400.
 
 GET  /api/members/:memberId
   → { member: {memberId, groupId, firstName, lastName, dateOfBirth, relationship},
       policyYears: [{ policyYearId, startDate, endDate, deductible, hasLaser, spend, pctUsed, excess }],
       claims: [{ claimId, policyYearId|null, currentVersion, status, effectiveAmount, serviceDate,
                  versions: [{ version, status, paidAmount, serviceDate, paidDate, diagnosisCode,
-                              filename, rowNumber, loadedAt, isCurrent }] }] }
+                              filename, rowNumber, loadedAt, isCurrent, memberId }] }] }
+  claims = those whose current version belongs to this member, newest service date first; versions newest first.
 
 GET  /api/alerts?status=open|acknowledged|all&groupId=GA   (default status=open)
   → [{ id, groupId, groupName, memberId, memberName, policyYearId, policyYearStart, policyYearEnd,
        threshold, spendAtTrigger, deductibleAtTrigger, currentSpend, currentPctUsed, status, createdAt,
        uploadFilename, acknowledgedBy, acknowledgedAt, note }]
-  newest first (createdAt desc, then threshold desc).
+  newest first (createdAt desc, then threshold desc). groupId of a group the caller cannot see → 404; bad status → 400.
 
 POST /api/alerts/:id/acknowledge   body { note }            analyst only
   → the updated alert. 400 empty note, 403 broker, 404 not visible, 409 not open.
 
 POST /api/uploads   multipart/form-data, field "file"       analyst only
   → 201 UploadResult (also 200 is fine) ; 400 for rejected files (body still an UploadResult with status "rejected")
+    400 no file in field "file"; 413 file over 25 MB
 GET  /api/uploads                                           analyst only, newest first, without row errors
 GET  /api/uploads/:id                                       analyst only, UploadResult
 
