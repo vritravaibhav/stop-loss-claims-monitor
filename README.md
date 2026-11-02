@@ -140,9 +140,10 @@ Optional extras done:
 - **Audit basics:** who uploaded which file (with sha256), and who acknowledged which alert, when, and with what note.
 
 Not done, and other simplifications: see the **shortcut list in [`DECISIONS.md`](DECISIONS.md#shortcut-list)**.
-Notably, uploads are synchronous, there's no pagination, and the TPA layouts are in code. Also, **no real Firebase
-project exists**: creation hit the GCP project quota, so prod config is placeholders and everything runs on the
-emulator.
+Notably, uploads are synchronous, there's no pagination, and the TPA layouts are in code. Also, **nothing is deployed**:
+the deploy config targets an existing Firebase project, `flutter-course-selling`, shared with another app
+(creating a new project hit the GCP project quota). It gets its own Hosting site and leaves that project's Auth
+settings alone. Everything here runs on the emulator.
 
 ## Screenshots
 

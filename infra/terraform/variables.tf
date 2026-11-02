@@ -107,6 +107,12 @@ variable "extra_authorized_domains" {
   default     = []
 }
 
+variable "manage_auth_config" {
+  description = "Manage the project's Firebase Auth / Identity Platform config (email/password on, self sign-up off). It is project-wide, so set false when the project is shared with another app whose sign-up must keep working."
+  type        = bool
+  default     = true
+}
+
 variable "labels" {
   description = "Labels applied to every resource that supports them."
   type        = map(string)

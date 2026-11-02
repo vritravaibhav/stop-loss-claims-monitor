@@ -1,8 +1,15 @@
 # cp terraform.tfvars.example terraform.tfvars   (terraform.tfvars is not secret, but is per-environment)
-project_id        = "stoploss-monitor-dv"
-region            = "us-central1"
-github_repository = "your-org/stoploss-monitor"
-api_image         = "us-central1-docker.pkg.dev/stoploss-monitor-dv/stoploss/api:<git-sha>"
+#
+# flutter-course-selling is an existing Firebase project shared with another app (new projects hit the GCP project
+# quota). Shared-project settings below: our own Hosting site (must match "site" in firebase.json) and no changes to
+# the project-wide Auth config. Before the first apply: terraform import google_firebase_project.default
+# projects/flutter-course-selling, and the project needs billing (Blaze) for Cloud SQL and Cloud Run.
+project_id         = "flutter-course-selling"
+region             = "us-central1"
+github_repository  = "vritravaibhav/stop-loss-claims-monitor"
+api_image          = "us-central1-docker.pkg.dev/flutter-course-selling/stoploss/api:<git-sha>"
+hosting_site_id    = "stoploss-claims-monitor"
+manage_auth_config = false
 
 # Sizing (defaults shown)
 # db_tier              = "db-f1-micro"

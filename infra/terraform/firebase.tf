@@ -33,6 +33,8 @@ resource "google_firebase_hosting_site" "web" {
 
 # Firebase Authentication (Identity Platform): email/password only.
 resource "google_identity_platform_config" "auth" {
+  # Project-wide setting: leave it off in a project shared with another app (see manage_auth_config).
+  count   = var.manage_auth_config ? 1 : 0
   project = google_firebase_project.default.project
 
   sign_in {

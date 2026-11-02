@@ -5,9 +5,23 @@ apply has been run against a real project. It has been checked with `terraform f
 `terraform init -backend=false` and `terraform validate` (Terraform 1.17.1 and OpenTofu 1.13.5), and the same checks
 run in CI (`.github/workflows/ci.yml`, job `terraform`).
 
-The project id `stoploss-monitor-dv` in `.firebaserc` and `terraform.tfvars.example` is a **placeholder**. Creating
-that project failed because both available accounts were at their GCP project quota, so nothing exists behind it.
-Put the real project id in both places before applying.
+**Target project: `flutter-course-selling`** (in `.firebaserc` and `terraform.tfvars.example`). It's an existing
+Firebase project that already runs another app; creating a dedicated project failed because both available accounts
+are at their GCP project quota. Nothing from this repo has been created or deployed in it. Because the project is
+shared:
+- **Hosting uses its own site, `stoploss-claims-monitor`** (`hosting_site_id`, and `"site"` in `firebase.json`), so
+  a deploy can't replace the other app on the default site `flutter-course-selling.web.app`. Site ids are global;
+  if that one is taken, change it in both places.
+- **`manage_auth_config = false`**: Terraform leaves the project-wide Auth settings alone. Our config would turn
+  self sign-up off for the whole project, which would break the other app's registration. Enable email/password in
+  the console if it isn't already. The API's `app_user` table still decides who gets in, so other Firebase users of
+  the project get `403`.
+- The project is already a Firebase project, so import it before the first apply:
+  `terraform import google_firebase_project.default projects/flutter-course-selling`.
+- Cloud SQL and Cloud Run need billing (Blaze plan) on the project.
+
+For a real deployment, use a dedicated project per environment: it shares no Auth user pool, quotas or IAM with
+anything else.
 
 ## What it creates
 
