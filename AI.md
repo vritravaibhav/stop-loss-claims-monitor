@@ -57,6 +57,8 @@
      same end-to-end gate. Infra rewired compose, CI and Terraform in parallel against a process contract agreed
      up front.
 7. Review the merged code (ingest transaction, lock ordering, scoping SQL, auth), fix what was found, write the docs.
+8. Final gate on `main`, from scratch: `docker compose down -v && docker compose up --build`, then the end-to-end
+   check (PASS) and a headless-browser pass as analyst and as broker A.
 
 ## Three moments the AI got it wrong, and how it was caught
 
@@ -78,6 +80,17 @@
    - Separately, the orchestrator started three agents plus Docker image builds without watching disk space. The
      host hit 0 bytes free and every agent stalled until space was freed. Lesson: check `df` before heavy parallel
      work.
+
+The Spring Boot port, checked the same way:
+- The port was accepted only when it passed `tools/e2e_check.py`, plus a diff of 158 identical requests against the
+  Node API: every endpoint, all three roles, all error paths. There were 0 differences in status or body.
+- The diff caught two things the tests had missed:
+  - Spring Boot 4 had renamed a property, so `charset=UTF-8` silently disappeared from responses.
+  - The first real start with the emulator crashed (`NoClassDefFoundError`), because excluding Firestore had also
+    dropped a Jackson dependency firebase-admin needs. The test suite never builds a real `FirebaseApp`.
+- The port's own report pointed out that defaulting the project id to `demo-stoploss` weakened the emulator guard: a
+  stray emulator variable in production would let the API trust unsigned tokens. The orchestrator removed the
+  default (`d23583e`).
 
 Smaller catches:
 - The API agent found that JS `localeCompare` sorts `GA_2026-04_resend.csv` *before* `GA_2026-04.csv`, which would
