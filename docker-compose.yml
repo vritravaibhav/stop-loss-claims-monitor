@@ -39,8 +39,8 @@ services:
       - "127.0.0.1:4000:4000" # Emulator UI
       - "127.0.0.1:4500:4500" # Emulator UI log stream
     healthcheck:
-      # node:22-slim has no curl/wget; Node 22 has fetch. 127.0.0.1, not localhost: the
-      # emulator listens on IPv4 only.
+      # node:22-slim has no curl/wget; Node 22 has fetch. The emulator binds IPv4 only and
+      # localhost resolves to ::1 first, so 127.0.0.1 avoids relying on Node's fallback.
       test:
         - CMD
         - node
