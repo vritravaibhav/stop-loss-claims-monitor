@@ -10,11 +10,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "migrate": "node-pg-migrate up -m migrations --migrations-table pgmigrations",
+    "migrate": "node-pg-migrate up -m migrations --migrations-table pgmigrations --no-verbose",
     "seed": "node dist/scripts/seed.js",
     "load-sample": "node dist/scripts/load-sample.js",
     "start": "node dist/src/server.js",
-    "start:docker": "npm run migrate && npm run seed && npm start",
+    "start:docker": "npm run migrate && npm run seed && exec node dist/src/server.js",
     "dev": "tsx watch src/server.ts",
     "test": "vitest run"
   },
