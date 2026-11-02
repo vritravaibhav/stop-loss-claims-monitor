@@ -1,0 +1,46 @@
+{
+  "member": {
+    "memberId": "A-0077", "groupId": "GA", "firstName": "Priya", "lastName": "Shah",
+    "dateOfBirth": "1980-02-29", "relationship": "Employee"
+  },
+  "policyYears": [
+    {
+      "policyYearId": 1, "startDate": "2026-01-01", "endDate": "2026-12-31", "deductible": 50000,
+      "hasLaser": false, "spend": 61234.56, "pctUsed": 122.5, "excess": 11234.56
+    }
+  ],
+  "claims": [
+    {
+      "claimId": "100159", "policyYearId": 1, "currentVersion": 2, "status": "paid",
+      "effectiveAmount": 14455, "serviceDate": "2026-01-07",
+      "versions": [
+        {
+          "version": 2, "status": "paid", "paidAmount": 14455, "serviceDate": "2026-01-07",
+          "paidDate": "2026-04-02", "diagnosisCode": "F41.1", "filename": "GA_2026-04_resend.csv",
+          "rowNumber": 12, "loadedAt": "2026-11-02T09:15:00Z", "isCurrent": true
+        },
+        {
+          "version": 1, "status": "reversed", "paidAmount": 14455, "serviceDate": "2026-01-07",
+          "paidDate": "2026-02-26", "diagnosisCode": "F41.1", "filename": "GA_2026-02.csv",
+          "rowNumber": 40, "loadedAt": "2026-11-02T09:14:00Z", "isCurrent": false
+        },
+        {
+          "version": 0, "status": "paid", "paidAmount": 14455, "serviceDate": "2026-01-07",
+          "paidDate": "2026-01-26", "diagnosisCode": null, "filename": "GA_2026-01.csv",
+          "rowNumber": 5, "loadedAt": "2026-11-02T09:13:00Z", "isCurrent": false
+        }
+      ]
+    },
+    {
+      "claimId": "100190", "policyYearId": null, "currentVersion": 0, "status": "paid",
+      "effectiveAmount": 790.68, "serviceDate": "2025-12-13",
+      "versions": [
+        {
+          "version": 0, "status": "paid", "paidAmount": 790.68, "serviceDate": "2025-12-13",
+          "paidDate": null, "diagnosisCode": "J45.909", "filename": "GA_2026-01.csv",
+          "rowNumber": 2, "loadedAt": "2026-11-02T09:13:00Z", "isCurrent": true
+        }
+      ]
+    }
+  ]
+}

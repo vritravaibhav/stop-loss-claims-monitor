@@ -1,0 +1,19 @@
+[
+  {
+    "id": 12, "groupId": "GA", "groupName": "Group A", "memberId": "A-0077", "memberName": "Priya Shah",
+    "policyYearId": 1, "policyYearStart": "2026-01-01", "policyYearEnd": "2026-12-31",
+    "threshold": 100, "spendAtTrigger": 52010.1, "deductibleAtTrigger": 50000,
+    "currentSpend": 61234.56, "currentPctUsed": 122.5, "status": "open",
+    "createdAt": "2026-11-02T09:15:00.000Z", "uploadFilename": "GA_2026-05.csv",
+    "acknowledgedBy": null, "acknowledgedAt": null, "note": null
+  },
+  {
+    "id": 7, "groupId": "GA", "groupName": "Group A", "memberId": "A-0007", "memberName": "Ken Ito",
+    "policyYearId": 1, "policyYearStart": "2026-01-01", "policyYearEnd": "2026-12-31",
+    "threshold": 50, "spendAtTrigger": 60000, "deductibleAtTrigger": 120000,
+    "currentSpend": 60000, "currentPctUsed": 50, "status": "acknowledged",
+    "createdAt": "2026-11-01T17:02:11Z", "uploadFilename": "GA_2026-03.csv",
+    "acknowledgedBy": "analyst@example.test", "acknowledgedAt": "2026-11-02T08:00:00Z",
+    "note": "Case manager assigned"
+  }
+]

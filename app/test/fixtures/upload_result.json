@@ -1,0 +1,20 @@
+{
+  "id": 5,
+  "filename": "GA_2026-04_resend.csv",
+  "groupId": "GA",
+  "layout": "tpa_one",
+  "status": "processed",
+  "rejectionReason": null,
+  "uploadedBy": "analyst@example.test",
+  "uploadedAt": "2026-11-02T09:15:00Z",
+  "sha256": "9f2c1e0b6a7d4c3b2a19f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a49",
+  "counts": { "rows": 42, "applied": 37, "unchanged": 1, "olderIgnored": 1, "summary": 1, "errors": 2 },
+  "errors": [
+    { "rowNumber": 7, "reason": "Unknown member B-0999", "raw": "100301,0,B-0999,03/02/2026,04/01/2026,120.00,PAID,Z00.00" },
+    { "rowNumber": 19, "reason": "Amount \"N/A\" is not a valid amount", "raw": "100302,0,A-0012,03/05/2026,04/03/2026,N/A,PAID," }
+  ],
+  "alertsRaised": [
+    { "id": 12, "memberId": "A-0077", "threshold": 75, "spend": 38000, "deductible": 50000, "pctUsed": 76 },
+    { "id": 13, "memberId": "A-0077", "threshold": 100, "spend": 52010.1, "deductible": 50000, "pctUsed": 104 }
+  ]
+}
