@@ -14,8 +14,8 @@ Put the real project id in both places before applying.
 ```
 browser ──► Firebase Hosting (https://<site>.web.app)
               ├─ static Flutter web build (app/build/web)
-              └─ rewrites /api/** and /healthz ──► Cloud Run service "stoploss-api"
-                                                        │  (unix socket, Cloud SQL connector, IAM + mTLS)
+              └─ rewrites /api/** and /healthz ──► Cloud Run service "stoploss-api" (Spring Boot)
+                                                        │  (Cloud SQL Java socket factory: IAM + mTLS)
                                                         ▼
                                                    Cloud SQL Postgres 16 "stoploss-pg"
 browser ──► Firebase Auth (Identity Platform): email/password, ID token sent as Bearer to the API
@@ -25,9 +25,9 @@ browser ──► Firebase Auth (Identity Platform): email/password, ID token se
 |---|---|
 | `apis.tf` | `google_project_service` for Run, Cloud SQL Admin, Secret Manager, Artifact Registry, IAM/STS (WIF), Firebase, Hosting, Identity Toolkit. Left enabled on destroy. |
 | `registry.tf` | Artifact Registry Docker repo `stoploss`: immutable tags (the git SHA), keeps the last 10 images, deletes untagged layers after 7 days. |
-| `database.tf` | Cloud SQL `POSTGRES_16` (ENTERPRISE edition, `db-f1-micro` by default, PITR backups, deletion protection), database `stoploss`, user `stoploss`, Secret Manager secret `stoploss-database-url` holding the full `DATABASE_URL`. |
+| `database.tf` | Cloud SQL `POSTGRES_16` (ENTERPRISE edition, `db-f1-micro` by default, PITR backups, deletion protection), database `stoploss`, user `stoploss`, Secret Manager secret `stoploss-db-password` (the user's password; the JDBC URL and username aren't secret and are plain env vars). |
 | `iam.tf` | `stoploss-api` runtime service account with **only** `roles/cloudsql.client` + `secretAccessor` on that one secret. `stoploss-deploy` service account for GitHub Actions, plus a Workload Identity Federation pool/provider that accepts only this repo's runs on `main`. |
-| `cloud_run.tf` | `google_cloud_run_v2_service` `stoploss-api` (Cloud SQL volume at `/cloudsql`, `DATABASE_URL` from Secret Manager, `FIREBASE_PROJECT_ID`, scale 0..`api_max_instances`, `/healthz` startup probe, public invoker). `google_cloud_run_v2_job` `stoploss-migrate` (same image, secret and SA; runs `npm run migrate`). |
+| `cloud_run.tf` | `google_cloud_run_v2_service` `stoploss-api`: `SPRING_DATASOURCE_URL` (socket-factory JDBC URL), `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` from Secret Manager, `FIREBASE_PROJECT_ID`, `SPRING_FLYWAY_ENABLED=false`, 1 GiB, scale 0..`api_max_instances`, `/healthz` startup probe of up to ~120 s, public invoker. `google_cloud_run_v2_job` `stoploss-migrate`: same image, env and SA, run with `--app.mode=migrate` (Flyway). |
 | `firebase.tf` | `google_firebase_project`, `google_firebase_web_app` (and its public config), `google_firebase_hosting_site`, `google_identity_platform_config` (email/password only, self sign-up disabled). |
 | `outputs.tf` | API/Hosting URLs, image repository, the GitHub Actions variables for `deploy.yml`, and `app_prod_config` (the contents of `app/config/prod.json`). |
 
@@ -36,18 +36,25 @@ browser ──► Firebase Auth (Identity Platform): email/password, ID token se
 **Cloud Run + Cloud SQL, not GKE/VMs.** One stateless container scales to zero when idle, deploys are revisions with
 instant rollback, and there is no cluster to patch. The API holds no state besides the database.
 
-**Cloud SQL over public IP with no authorised networks, plus the Cloud SQL connector, not private IP.** With zero
+**Cloud SQL over public IP with no authorised networks, plus a Cloud SQL connector, not private IP.** With zero
 authorised networks and `ssl_mode = TRUSTED_CLIENT_CERTIFICATE_REQUIRED`, nothing can open a direct TCP connection to
-the public address. The only way in is the connector (Cloud Run's built-in Cloud SQL volume runs the Auth Proxy),
-which checks IAM (`roles/cloudsql.client`) on every connection and uses mTLS with ephemeral certificates. Private IP
+the public address. The only way in is a connector: here the Cloud SQL Java socket factory on the API's classpath
+(`jdbc:postgresql:///stoploss?cloudSqlInstance=…&socketFactory=com.google.cloud.sql.postgres.SocketFactory`). It
+checks IAM (`roles/cloudsql.client`) on every connection and uses mTLS with ephemeral certificates, so Cloud Run
+needs no Cloud SQL volume or sidecar. Private IP
 would also need a VPC, a private-service-access peering range and Direct VPC egress (or a connector) on Cloud Run:
 more resources and IP planning, for a small demo whose access is already IAM-gated. For real health data I would still
 move to private IP (see below), because "no public endpoint at all" is easier to argue in an audit.
 
 **The DB password never lands in state.** `random_password` is an *ephemeral* resource and reaches Cloud SQL and
 Secret Manager only through write-only arguments (`password_wo`, `secret_data_wo`). That is why `required_version` is
-`>= 1.11`. To rotate it, bump `db_password_version`: both get the same new value in one apply, then redeploy the API
-(Cloud Run reads `latest` when a revision starts).
+`>= 1.11`. The API reads the secret as `SPRING_DATASOURCE_PASSWORD`. To rotate it, bump `db_password_version`: both
+get the same new value in one apply, then redeploy the API (Cloud Run reads `latest` when a revision starts).
+
+**Only the migration job migrates.** The service runs with `SPRING_FLYWAY_ENABLED=false`. Several instances starting
+at once therefore never race Flyway, a revision never changes the schema as a side effect of scaling up, and the
+runtime could later use a DB role without DDL rights. `deploy.yml` runs `stoploss-migrate` (`--app.mode=migrate`) and
+waits for it before rolling out the service. Locally, compose keeps Flyway-on-startup for a one-command run.
 
 **Public invoker (`allUsers`).** Firebase Hosting rewrites can't attach an IAM identity, so the service must accept
 unauthenticated invocations. Authorisation is the API's job: every `/api` request needs a valid Firebase ID token,
@@ -74,7 +81,8 @@ Docker, and Terraform or OpenTofu >= 1.11.
 2. **Variables**: `cp terraform.tfvars.example terraform.tfvars` and set `project_id`, `github_repository`.
 3. **Bootstrap the registry.** The Cloud Run service needs an image that already exists:
    `terraform apply -target=google_artifact_registry_repository.docker` (this also enables the APIs).
-4. **Push a first image.** Cloud Run runs linux/amd64 only, so on Apple Silicon pass `--platform`:
+4. **Push a first image.** `api/Dockerfile` builds the jar with Maven inside the image, so no local JDK is needed.
+   Cloud Run runs linux/amd64 only, so on Apple Silicon pass `--platform`:
    ```sh
    REPO=$(terraform output -raw api_image_repository)   # or <region>-docker.pkg.dev/<project>/stoploss
    gcloud auth configure-docker us-central1-docker.pkg.dev
@@ -83,9 +91,10 @@ Docker, and Terraform or OpenTofu >= 1.11.
    ```
    Set `api_image` in `terraform.tfvars` to that tag.
 5. **Apply everything**: `terraform apply`.
-6. **Migrate**: `gcloud run jobs execute stoploss-migrate --region us-central1 --wait`.
-7. **Users**: there is no seed in prod. Create Identity Platform users (console or Admin SDK) and their `app_user` rows
-   (see "before running it for real").
+6. **Migrate**: `gcloud run jobs execute stoploss-migrate --region us-central1 --wait` (Flyway via
+   `--app.mode=migrate`). The service doesn't migrate on its own, so do this before the first request.
+7. **Users**: there is no seed in prod (`SEED_ON_STARTUP` is unset and `--app.mode=seed` reads the sample data).
+   Create Identity Platform users (console or Admin SDK) and their `app_user` rows (see "before running it for real").
 8. **Web config**: `terraform output -json app_prod_config > ../../app/config/prod.json` and commit it. The values
    are public by design: they ship in the JS bundle.
 9. **CD**: put `terraform output github_actions_variables` into the repository's Actions *variables*, create a
@@ -110,23 +119,26 @@ Gotchas:
 |---|---|
 | Cloud SQL `db-f1-micro`, 10 GB SSD, backups + PITR logs | ~$10–15 (the main fixed cost; `REGIONAL` roughly doubles it) |
 | Cloud Run, min instances 0, request-based CPU | ~$0 at demo traffic (free tier: 2M requests, 180k vCPU-s) |
-| Artifact Registry (10 images kept, ~100 MB each) | well under $1 |
+| Artifact Registry (10 images kept, a few hundred MB each with the JRE) | about $1 or less |
 | Secret Manager (1 secret, few versions) | cents |
 | Firebase Hosting | free tier (10 GB stored, 360 MB/day transfer) |
 | Identity Platform, email/password | free below 50k MAU |
 
-Setting `api_min_instances = 1` removes cold starts but adds roughly the cost of one always-allocated instance
-(tens of dollars a month).
+With scale-to-zero, the first request after an idle period waits for JVM and Spring startup (seconds; the startup
+probe allows up to ~120 s). Setting `api_min_instances = 1` removes that but adds roughly the cost of one
+always-allocated 1 GiB instance (tens of dollars a month). Class-data sharing (CDS) or a native image would also
+shorten cold starts.
 
 ## What I'd change before running it for real
 
 1. **State and environments**: GCS backend with versioning and a tightly scoped bucket. Separate projects for
    dev/staging/prod, with this directory turned into a module plus per-env tfvars. Add a billing budget alert.
 2. **Database**: private IP + Direct VPC egress; `REGIONAL` availability; a dedicated-core tier (`db-custom-2-7680`
-   or larger). Size connections deliberately: `api_max_instances × pool size` (node-postgres defaults to 10) must stay
+   or larger). Size connections deliberately: `api_max_instances × pool size` (HikariCP defaults to 10) must stay
    under `max_connections` (25 on `db-f1-micro`), which is why `api_max_instances` defaults to 2. Use CMEK if
    required.
-3. **No passwords at all**: Cloud SQL IAM database authentication with the connector's automatic IAM auth, and separate
+3. **No passwords at all**: Cloud SQL IAM database authentication (the Java socket factory supports
+   `enableIamAuth=true`), which removes the password secret, and separate
    roles: a migrator service account and DB role that can run DDL, and a runtime role limited to DML. Today the job
    and the service share one SA and one DB user. Set or disable the built-in `postgres` user's password.
 4. **Uploads**: Cloud Run caps HTTP/1 request bodies at 32 MiB, and Hosting → Cloud Run rewrites time out at 60 s,

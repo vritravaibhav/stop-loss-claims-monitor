@@ -1,8 +1,9 @@
 # Local stack: `docker compose up --build`, then open http://localhost:8081
 #
-#   db        Postgres 16 (dev database "stoploss", plus "stoploss_test" for `make test-api`)
+#   db        Postgres 16 (database "stoploss")
 #   firebase  Firebase Auth emulator (project demo-stoploss) + Emulator UI on :4000
-#   api       Node/TS API: migrate + seed (DB rows and emulator users), then serve on :8080
+#   api       Spring Boot API: Flyway migrates and the seed runs (DB rows and emulator users)
+#             on startup, then it serves on :8080
 #   web       nginx serving the Flutter web build on :8081 and proxying /api to the api
 #
 # Seed logins (password Password123!): analyst@example.test, broker.a@example.test,
@@ -20,7 +21,6 @@ services:
       POSTGRES_DB: stoploss
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
     ports:
       # Not 5432, to avoid clashing with a Postgres already running on the host.
       - "127.0.0.1:${DB_HOST_PORT:-55433}:5432"
@@ -54,14 +54,19 @@ services:
   api:
     build:
       context: ./api
-    command: ["npm", "run", "start:docker"]
+    # No command: the image ENTRYPOINT (java -jar /app/stoploss-api.jar) serves the API.
+    # Flyway migrates on startup. One-shot modes take the same env, e.g.
+    # `docker compose run --rm api --app.mode=load-sample` (make load-sample).
     environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/stoploss
       PORT: "8080"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/stoploss
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
       DATA_DIR: /data
       FIREBASE_AUTH_EMULATOR_HOST: firebase:9099
       FIREBASE_PROJECT_ID: demo-stoploss
-      GCLOUD_PROJECT: demo-stoploss
+      SEED_ON_STARTUP: "true"
+      SEED_FIREBASE_USERS: "true"
       SEED_PASSWORD: ${SEED_PASSWORD:-Password123!}
     volumes:
       - ./data:/data:ro
@@ -76,11 +81,12 @@ services:
         # too so its seed step recreates them.
         restart: true
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz > /dev/null || exit 1"]
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/healthz"]
       interval: 5s
       timeout: 3s
       retries: 30
-      start_period: 60s
+      # JVM start + Flyway + seed (creates the emulator users) before /healthz answers.
+      start_period: 90s
 
   web:
     build:

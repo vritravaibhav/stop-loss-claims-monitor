@@ -2,10 +2,11 @@
 #
 # Connectivity: public IP with NO authorised networks, ssl_mode
 # TRUSTED_CLIENT_CERTIFICATE_REQUIRED. Nothing can open a plain TCP connection to the public
-# address: the only way in is the Cloud SQL connector (Cloud Run's built-in Cloud SQL volume,
-# the Auth Proxy), which needs IAM roles/cloudsql.client and uses mTLS with an ephemeral
-# client certificate. That avoids a VPC, a private service access peering range and VPC
-# egress for Cloud Run. See README for the private-IP alternative.
+# address: the only way in is a Cloud SQL connector. Here that is the Cloud SQL Java socket
+# factory inside the API (com.google.cloud.sql.postgres.SocketFactory), which needs IAM
+# roles/cloudsql.client and uses mTLS with an ephemeral client certificate. That avoids a
+# VPC, a private service access peering range and VPC egress for Cloud Run. See README for
+# the private-IP alternative.
 
 resource "google_sql_database_instance" "main" {
   name                = "stoploss-pg"
@@ -56,6 +57,16 @@ resource "google_sql_database_instance" "main" {
   depends_on = [google_project_service.enabled]
 }
 
+locals {
+  # Spring datasource URL. No host: the socket factory looks the instance up through the
+  # Cloud SQL Admin API and opens an mTLS tunnel to it. Not a secret (no credentials in it).
+  jdbc_url = format(
+    "jdbc:postgresql:///%s?cloudSqlInstance=%s&socketFactory=com.google.cloud.sql.postgres.SocketFactory",
+    google_sql_database.app.name,
+    google_sql_database_instance.main.connection_name,
+  )
+}
+
 resource "google_sql_database" "app" {
   name     = "stoploss"
   instance = google_sql_database_instance.main.name
@@ -66,7 +77,7 @@ resource "google_sql_database" "app" {
 # plan files. Rotation: bump var.db_password_version.
 ephemeral "random_password" "db" {
   length  = 32
-  special = false # URL-safe: it is embedded in DATABASE_URL without encoding
+  special = false # alphanumeric: no quoting or escaping surprises in env vars / JDBC
 }
 
 resource "google_sql_user" "app" {
@@ -79,8 +90,8 @@ resource "google_sql_user" "app" {
   deletion_policy = "ABANDON"
 }
 
-resource "google_secret_manager_secret" "database_url" {
-  secret_id = "stoploss-database-url"
+resource "google_secret_manager_secret" "db_password" {
+  secret_id = "stoploss-db-password"
 
   replication {
     auto {}
@@ -89,17 +100,10 @@ resource "google_secret_manager_secret" "database_url" {
   depends_on = [google_project_service.enabled]
 }
 
-# Full connection string, consumed as DATABASE_URL by the API service and the migration job.
-# host=/cloudsql/<connection name> is the unix socket the Cloud SQL volume mounts at
-# /cloudsql; node-postgres (and node-pg-migrate) read the host query parameter.
-resource "google_secret_manager_secret_version" "database_url" {
-  secret                 = google_secret_manager_secret.database_url.id
+# Consumed as SPRING_DATASOURCE_PASSWORD by the API service and the migration job. The URL
+# and username are plain env vars (local.jdbc_url, google_sql_user.app.name).
+resource "google_secret_manager_secret_version" "db_password" {
+  secret                 = google_secret_manager_secret.db_password.id
+  secret_data_wo         = ephemeral.random_password.db.result
   secret_data_wo_version = var.db_password_version
-  secret_data_wo = format(
-    "postgresql://%s:%s@/%s?host=/cloudsql/%s",
-    google_sql_user.app.name,
-    ephemeral.random_password.db.result,
-    google_sql_database.app.name,
-    google_sql_database_instance.main.connection_name,
-  )
 }

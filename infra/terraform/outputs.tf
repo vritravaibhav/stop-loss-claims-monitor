@@ -18,13 +18,18 @@ output "cloud_sql_connection_name" {
   value       = google_sql_database_instance.main.connection_name
 }
 
-output "database_url_secret" {
-  description = "Secret Manager secret holding DATABASE_URL."
-  value       = google_secret_manager_secret.database_url.id
+output "db_password_secret" {
+  description = "Secret Manager secret holding the API's DB password (SPRING_DATASOURCE_PASSWORD)."
+  value       = google_secret_manager_secret.db_password.id
+}
+
+output "jdbc_url" {
+  description = "SPRING_DATASOURCE_URL used by the service and the migration job (no credentials)."
+  value       = local.jdbc_url
 }
 
 output "migrate_job" {
-  description = "Cloud Run Job that runs `npm run migrate`."
+  description = "Cloud Run Job that runs the API image with --app.mode=migrate (Flyway)."
   value       = google_cloud_run_v2_job.migrate.name
 }
 
