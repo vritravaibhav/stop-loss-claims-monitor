@@ -1,0 +1,17 @@
+# The image builds the jar itself: never send host build output, IDE files or local secrets.
+target/
+.idea/
+.vscode/
+*.iml
+*.log
+.env
+.env.*
+!.env.example
+.git
+.DS_Store
+Dockerfile
+.dockerignore
+README.md
+# Node leftovers, if any are lying around in a working copy
+node_modules/
+dist/
