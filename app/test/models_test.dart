@@ -60,7 +60,11 @@ void main() {
     expect(spend.group.id, 'GA');
     expect(spend.policyYear.id, '1');
     expect(spend.policyYear.deductibleCents, 5000000);
-    expect(spend.members.map((m) => m.memberId), ['A-0077', 'A-0007', 'A-0001']);
+    expect(spend.members.map((m) => m.memberId), [
+      'A-0077',
+      'A-0007',
+      'A-0001',
+    ]);
 
     final top = spend.members.first;
     expect(top.fullName, 'Priya Shah');
@@ -108,10 +112,7 @@ void main() {
     expect(reversed.filename, 'GA_2026-02.csv');
     expect(reversed.rowNumber, 40);
     expect(reversed.loadedAt.isUtc, isFalse, reason: 'shown in local time');
-    expect(
-      reversed.loadedAt.toUtc(),
-      DateTime.utc(2026, 11, 2, 9, 14),
-    );
+    expect(reversed.loadedAt.toUtc(), DateTime.utc(2026, 11, 2, 9, 14));
     expect(claim.versions.last.diagnosisCode, isNull);
 
     final outside = detail.claims.last;

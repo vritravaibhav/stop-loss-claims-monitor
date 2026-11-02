@@ -555,7 +555,11 @@ String? _idOrNull(Object? value) => value == null ? null : _id(value);
 DateTime _date(Object? value) {
   final parts = (value as String).split('-');
   if (parts.length != 3) throw FormatException('Expected YYYY-MM-DD: $value');
-  return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+  return DateTime(
+    int.parse(parts[0]),
+    int.parse(parts[1]),
+    int.parse(parts[2]),
+  );
 }
 
 DateTime? _dateOrNull(Object? value) => value == null ? null : _date(value);
