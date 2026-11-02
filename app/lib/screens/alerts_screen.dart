@@ -4,18 +4,23 @@ import '../app_scope.dart';
 import '../format.dart';
 import '../models.dart';
 import '../services/api_client.dart';
-import '../widgets/account_menu.dart';
 import '../widgets/common.dart';
 import 'member_screen.dart';
 
+/// Alerts tab. A tab body, not a page: the home shell supplies the app bar
+/// and its Refresh button.
 class AlertsScreen extends StatefulWidget {
-  const AlertsScreen({super.key});
+  const AlertsScreen({super.key, this.reloadSignal});
+
+  /// Fired by the shell's Refresh button.
+  final Listenable? reloadSignal;
 
   @override
   State<AlertsScreen> createState() => _AlertsScreenState();
 }
 
-class _AlertsScreenState extends State<AlertsScreen> {
+class _AlertsScreenState extends State<AlertsScreen>
+    with ReloadOnSignal<AlertsScreen> {
   AlertFilter _filter = AlertFilter.open;
   String? _groupId;
   Future<List<Alert>>? _future;
@@ -32,7 +37,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Future<List<Alert>> _fetch() =>
       context.api.alerts(status: _filter, groupId: _groupId);
 
-  void _reload() => setState(() {
+  @override
+  Listenable? get reloadSignal => widget.reloadSignal;
+
+  @override
+  void reload() => setState(() {
     _future = _fetch();
   });
 
@@ -53,7 +62,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     } finally {
       if (mounted) {
         setState(() => _acknowledging.remove(alert.id));
-        _reload();
+        reload();
       }
     }
   }
@@ -61,121 +70,105 @@ class _AlertsScreenState extends State<AlertsScreen> {
   @override
   Widget build(BuildContext context) {
     final analyst = context.isAnalyst;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Alerts'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: _reload,
-          ),
-          const AccountMenu(),
-        ],
-      ),
-      body: Column(
-        children: [
-          ContentWidth(
-            maxWidth: 1000,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Wrap(
-                spacing: 16,
-                runSpacing: 12,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SegmentedButton<AlertFilter>(
-                    segments: const [
-                      ButtonSegment(
-                        value: AlertFilter.open,
-                        label: Text('Open'),
+    return Column(
+      children: [
+        ContentWidth(
+          maxWidth: 1000,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SegmentedButton<AlertFilter>(
+                  segments: const [
+                    ButtonSegment(value: AlertFilter.open, label: Text('Open')),
+                    ButtonSegment(
+                      value: AlertFilter.acknowledged,
+                      label: Text('Acknowledged'),
+                    ),
+                    ButtonSegment(value: AlertFilter.all, label: Text('All')),
+                  ],
+                  selected: {_filter},
+                  onSelectionChanged: (s) {
+                    _filter = s.single;
+                    reload();
+                  },
+                ),
+                FutureBuilder<List<Group>>(
+                  future: _groups,
+                  builder: (context, snapshot) => SizedBox(
+                    width: 240,
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: _groupId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Group',
+                        isDense: true,
                       ),
-                      ButtonSegment(
-                        value: AlertFilter.acknowledged,
-                        label: Text('Acknowledged'),
-                      ),
-                      ButtonSegment(value: AlertFilter.all, label: Text('All')),
-                    ],
-                    selected: {_filter},
-                    onSelectionChanged: (s) {
-                      _filter = s.single;
-                      _reload();
-                    },
-                  ),
-                  FutureBuilder<List<Group>>(
-                    future: _groups,
-                    builder: (context, snapshot) => SizedBox(
-                      width: 240,
-                      child: DropdownButtonFormField<String?>(
-                        initialValue: _groupId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Group',
-                          isDense: true,
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('All groups'),
                         ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('All groups'),
-                          ),
-                          for (final g in snapshot.data ?? const <Group>[])
-                            DropdownMenuItem(
-                              value: g.id,
-                              child: Text(
-                                '${g.name} (${g.id})',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        for (final g in snapshot.data ?? const <Group>[])
+                          DropdownMenuItem(
+                            value: g.id,
+                            child: Text(
+                              '${g.name} (${g.id})',
+                              overflow: TextOverflow.ellipsis,
                             ),
-                        ],
-                        onChanged: (id) {
-                          _groupId = id;
-                          _reload();
-                        },
-                      ),
+                          ),
+                      ],
+                      onChanged: (id) {
+                        _groupId = id;
+                        reload();
+                      },
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          Expanded(
-            child: AsyncView<List<Alert>>(
-              future: _future,
-              onRetry: _reload,
-              builder: (context, alerts) {
-                if (alerts.isEmpty) {
-                  return EmptyState(
-                    icon: Icons.notifications_none,
-                    message: switch (_filter) {
-                      AlertFilter.open => 'No open alerts.',
-                      AlertFilter.acknowledged => 'No acknowledged alerts.',
-                      AlertFilter.all => 'No alerts yet.',
-                    },
-                  );
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: alerts.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) {
-                    final alert = alerts[i];
-                    return ContentWidth(
-                      maxWidth: 1000,
-                      child: AlertCard(
-                        alert: alert,
-                        busy: _acknowledging.contains(alert.id),
-                        onAcknowledge: analyst && alert.isOpen
-                            ? () => _acknowledge(alert)
-                            : null,
-                      ),
-                    );
+        ),
+        Expanded(
+          child: AsyncView<List<Alert>>(
+            future: _future,
+            onRetry: reload,
+            builder: (context, alerts) {
+              if (alerts.isEmpty) {
+                return EmptyState(
+                  icon: Icons.notifications_none,
+                  message: switch (_filter) {
+                    AlertFilter.open => 'No open alerts.',
+                    AlertFilter.acknowledged => 'No acknowledged alerts.',
+                    AlertFilter.all => 'No alerts yet.',
                   },
                 );
-              },
-            ),
+              }
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                itemCount: alerts.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemBuilder: (context, i) {
+                  final alert = alerts[i];
+                  return ContentWidth(
+                    maxWidth: 1000,
+                    child: AlertCard(
+                      alert: alert,
+                      busy: _acknowledging.contains(alert.id),
+                      onAcknowledge: analyst && alert.isOpen
+                          ? () => _acknowledge(alert)
+                          : null,
+                    ),
+                  );
+                },
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

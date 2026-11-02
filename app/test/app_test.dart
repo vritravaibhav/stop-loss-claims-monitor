@@ -1,10 +1,13 @@
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart' show CupertinoPageTransition;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stoploss_monitor/app.dart';
 import 'package:stoploss_monitor/app_scope.dart';
 import 'package:stoploss_monitor/models.dart';
+import 'package:stoploss_monitor/screens/group_spend_screen.dart';
+import 'package:stoploss_monitor/screens/home_shell.dart';
 import 'package:stoploss_monitor/screens/upload_screen.dart';
 import 'package:stoploss_monitor/services/api_client.dart';
 import 'package:stoploss_monitor/services/auth_service.dart';
@@ -42,10 +45,30 @@ Future<({FakeApi api, FakeAuth auth, Session session})> pumpApp(
   return (api: api, auth: auth, session: session);
 }
 
-Finder navLabel(String label) => find.descendant(
-  of: find.byType(NavigationRail),
-  matching: find.text(label),
-);
+Finder tabLabel(String label) =>
+    find.descendant(of: find.byType(TabBar), matching: find.text(label));
+
+/// The top tab labels, left to right.
+List<String?> tabLabels(WidgetTester tester) => [
+  for (final text in tester.widgetList<Text>(
+    find.descendant(of: find.byType(TabBar), matching: find.byType(Text)),
+  ))
+    text.data,
+];
+
+/// No rail, bottom bar, drawer or end drawer anywhere in the tree.
+void expectNoSidePanels(WidgetTester tester) {
+  expect(find.byType(NavigationRail, skipOffstage: false), findsNothing);
+  expect(find.byType(NavigationBar, skipOffstage: false), findsNothing);
+  expect(find.byType(Drawer, skipOffstage: false), findsNothing);
+  expect(find.byType(NavigationDrawer, skipOffstage: false), findsNothing);
+  for (final scaffold in tester.widgetList<Scaffold>(
+    find.byType(Scaffold, skipOffstage: false),
+  )) {
+    expect(scaffold.drawer, isNull);
+    expect(scaffold.endDrawer, isNull);
+  }
+}
 
 void main() {
   group('sign-in and roles', () {
@@ -61,9 +84,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Group A'), findsOneWidget);
-      for (final tab in ['Groups', 'Alerts', 'Upload', 'History']) {
-        expect(navLabel(tab), findsOneWidget, reason: tab);
-      }
+      expect(tabLabels(tester), ['Groups', 'Alerts', 'Upload', 'History']);
     });
 
     testWidgets('a wrong password shows the error and stays on login', (
@@ -82,22 +103,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Incorrect email or password.'), findsOneWidget);
-      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
     });
 
-    testWidgets('a broker gets no Upload or History tab', (tester) async {
+    testWidgets('broker sees only Groups and Alerts tabs', (tester) async {
       await pumpApp(tester, user: brokerUser, profile: brokerProfile());
-      expect(navLabel('Groups'), findsOneWidget);
-      expect(navLabel('Alerts'), findsOneWidget);
-      expect(navLabel('Upload'), findsNothing);
-      expect(navLabel('History'), findsNothing);
+      expect(tabLabels(tester), ['Groups', 'Alerts']);
       expect(find.text('Broker · Brokerage A'), findsOneWidget);
-    });
-
-    testWidgets('narrow screens use a bottom NavigationBar', (tester) async {
-      await pumpApp(tester, user: analystUser, size: const Size(400, 800));
-      expect(find.byType(NavigationRail), findsNothing);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expectNoSidePanels(tester);
     });
 
     testWidgets('a 403 from /api/me returns to login with a notice', (
@@ -119,7 +132,7 @@ void main() {
       tester,
     ) async {
       final app = await pumpApp(tester, user: analystUser);
-      await tester.tap(navLabel('Alerts'));
+      await tester.tap(tabLabel('Alerts'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Acknowledge'));
       await tester.pumpAndSettle();
@@ -131,10 +144,126 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.textContaining('session has expired'), findsOneWidget);
     });
+
+    testWidgets('session expiry on a detail page pops it and shows login', (
+      tester,
+    ) async {
+      final app = await pumpApp(tester, user: analystUser);
+      await tester.tap(find.text('Group A'));
+      await tester.pumpAndSettle();
+      expect(find.byType(GroupSpendScreen), findsOneWidget);
+
+      app.session.expire();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GroupSpendScreen, skipOffstage: false), findsNothing);
+      expect(find.textContaining('session has expired'), findsOneWidget);
+    });
+  });
+
+  group('layout: top tabs, no side panels', () {
+    for (final width in [360.0, 800.0, 1440.0]) {
+      testWidgets('${width.toInt()} px wide: app bar with top tabs only', (
+        tester,
+      ) async {
+        await pumpApp(tester, user: analystUser, size: Size(width, 900));
+
+        expectNoSidePanels(tester);
+        final appBar = tester.widget<AppBar>(find.byType(AppBar));
+        expect(appBar.bottom, isA<TabBar>());
+        expect(
+          find.descendant(
+            of: find.byType(AppBar),
+            matching: find.text('Stop-loss monitor'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AppBar),
+            matching: find.byTooltip('Account'),
+          ),
+          findsOneWidget,
+        );
+
+        final bar = tester.widget<TabBar>(find.byType(TabBar));
+        // Never squeezed: each label keeps its natural width.
+        expect(bar.isScrollable, isTrue);
+        expect(
+          bar.tabAlignment,
+          width < HomeShell.narrowBreakpoint
+              ? TabAlignment.start
+              : TabAlignment.center,
+        );
+        expect(tabLabels(tester), ['Groups', 'Alerts', 'Upload', 'History']);
+
+        // The last tab can be reached (scrolled to on a phone) and opened.
+        await tester.ensureVisible(tabLabel('History'));
+        await tester.pumpAndSettle();
+        await tester.tap(tabLabel('History'));
+        await tester.pumpAndSettle();
+        expect(find.text('GZ_2026-01.csv'), findsOneWidget);
+        expectNoSidePanels(tester);
+      });
+    }
+
+    testWidgets('the tab row scrolls on a phone-width screen', (tester) async {
+      await pumpApp(tester, user: analystUser, size: const Size(360, 800));
+      final tabsWidth = tester.getSize(find.byType(TabBar)).width;
+      final lastRight = tester.getTopRight(tabLabel('History')).dx;
+      expect(lastRight, greaterThan(tabsWidth), reason: 'History starts off');
+      await tester.drag(find.byType(TabBar), const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getTopRight(tabLabel('History')).dx, lessThan(tabsWidth));
+    });
+
+    testWidgets(
+      'opening a detail page on Apple platforms does not slide it in',
+      (tester) async {
+        await pumpApp(tester, user: analystUser);
+        await tester.tap(find.text('Group A'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100)); // mid-transition
+        final page = find.byType(GroupSpendScreen);
+        expect(page, findsOneWidget);
+        expect(
+          find.byType(CupertinoPageTransition, skipOffstage: false),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(of: page, matching: find.byType(SlideTransition)),
+          findsNothing,
+        );
+        await tester.pumpAndSettle();
+      },
+      // Flutter web on a Mac or iPhone reports these platforms.
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
+
+    testWidgets('shell Refresh reloads the visible tab and keeps its filter', (
+      tester,
+    ) async {
+      final app = await pumpApp(tester, user: analystUser);
+      await tester.tap(tabLabel('Alerts'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All'));
+      await tester.pumpAndSettle();
+      expect(app.api.calls.where((c) => c == 'alerts all -'), hasLength(1));
+
+      await tester.tap(find.byTooltip('Refresh'));
+      await tester.pumpAndSettle();
+      expect(app.api.calls.where((c) => c == 'alerts all -'), hasLength(2));
+      expect(find.text('Ken Ito · A-0007'), findsOneWidget);
+
+      // Upload has nothing to refetch, so no Refresh there.
+      await tester.tap(tabLabel('Upload'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Refresh'), findsNothing);
+    });
   });
 
   group('groups and drill-down', () {
-    testWidgets('group → ranked member spend → member, inside the shell', (
+    testWidgets('group → ranked member spend → member, as full pages', (
       tester,
     ) async {
       final app = await pumpApp(tester, user: analystUser);
@@ -148,18 +277,24 @@ void main() {
         for (final name in ranked) tester.getTopLeft(find.text(name).first).dy,
       ];
       expect(tops, orderedEquals([...tops]..sort()));
-      // Drill-downs keep the navigation visible.
-      expect(find.byType(NavigationRail), findsOneWidget);
+      // A full page over the shell: its own back button, the tabs covered.
+      expect(find.byType(BackButton), findsOneWidget);
+      expect(find.byType(TabBar), findsNothing);
+      expectNoSidePanels(tester);
 
       await tester.tap(find.text('Priya Shah').first);
       await tester.pumpAndSettle();
       expect(app.api.calls, contains('member A-0077'));
       expect(find.text('Claim 100159'), findsOneWidget);
+      expectNoSidePanels(tester);
 
-      // Re-selecting the tab returns to its first page.
-      await tester.tap(navLabel('Groups'));
+      // Back twice returns to the Groups tab.
+      await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.text('Group A · member spend'), findsNothing);
+      expect(find.text('Group A · member spend'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(TabBar), findsOneWidget);
       expect(find.text('Group A'), findsOneWidget);
     });
 
@@ -183,7 +318,7 @@ void main() {
       tester,
     ) async {
       final app = await pumpApp(tester, user: analystUser);
-      await tester.tap(navLabel('Alerts'));
+      await tester.tap(tabLabel('Alerts'));
       await tester.pumpAndSettle();
       expect(find.text('Priya Shah · A-0077'), findsOneWidget);
       // Default filter is open: the acknowledged alert is not listed.
@@ -225,7 +360,7 @@ void main() {
             api.onAcknowledge = (_, _) async =>
                 throw const ConflictException('Alert is not open'),
       );
-      await tester.tap(navLabel('Alerts'));
+      await tester.tap(tabLabel('Alerts'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Acknowledge'));
       await tester.pumpAndSettle();
@@ -245,7 +380,7 @@ void main() {
 
     testWidgets('brokers see alerts but no Acknowledge button', (tester) async {
       await pumpApp(tester, user: brokerUser, profile: brokerProfile());
-      await tester.tap(navLabel('Alerts'));
+      await tester.tap(tabLabel('Alerts'));
       await tester.pumpAndSettle();
       expect(find.text('Priya Shah · A-0077'), findsOneWidget);
       expect(find.text('Acknowledge'), findsNothing);
@@ -271,12 +406,15 @@ void main() {
           api: api,
           session: session,
           child: MaterialApp(
-            home: UploadScreen(
-              controller: controller,
-              picker: () async => [
-                for (final name in picked)
-                  PickedFile(name, utf8.encode('header\r\n')),
-              ],
+            // A tab body: the shell's Scaffold normally hosts it.
+            home: Scaffold(
+              body: UploadScreen(
+                controller: controller,
+                picker: () async => [
+                  for (final name in picked)
+                    PickedFile(name, utf8.encode('header\r\n')),
+                ],
+              ),
             ),
           ),
         ),

@@ -59,7 +59,8 @@ class _AuthGateState extends State<AuthGate> {
 
   void _onSession() {
     final status = _session!.status;
-    // Leaving the signed-in state: close any dialog still open over the shell.
+    // Leaving the signed-in state: close any detail page or dialog still
+    // open over the shell.
     if (_lastStatus == SessionStatus.ready && status != SessionStatus.ready) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
@@ -91,7 +92,10 @@ class _AuthGateState extends State<AuthGate> {
           ],
         ),
       ),
-      SessionStatus.ready => HomeShell(key: ValueKey(session.profile!.email)),
+      // Keyed by user and role: the shell's tab set is fixed per instance.
+      SessionStatus.ready => HomeShell(
+        key: ValueKey((session.profile!.email, session.profile!.role)),
+      ),
     };
   }
 }
