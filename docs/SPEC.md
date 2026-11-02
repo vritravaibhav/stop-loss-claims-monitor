@@ -9,44 +9,67 @@ it, change this file in the same commit and say so in the commit message.
 |---|---|---|
 | Frontend | Flutter (web target; same code runs on mobile) | requested stack |
 | Auth | Firebase Authentication (email/password). Local: Firebase Auth **emulator**, project id `demo-stoploss` | requested stack; emulator means no cloud account needed to run |
-| API | Node 22 + TypeScript + Express, container on Cloud Run (prod) | the brief needs the API (not the UI) to enforce access |
-| DB | PostgreSQL 16 (Cloud SQL in prod), SQL migrations with `node-pg-migrate` | brief requires a **relational DB with migrations**; Firestore is not relational, so it is not used |
-| Tests | vitest + supertest against a real Postgres | version/alert rules are DB-transactional; mocking the DB would test the mock |
+| API | Java 25 + Spring Boot 4.0 (Spring MVC, plain SQL on JdbcTemplate, no ORM), container on Cloud Run (prod) | the brief needs the API (not the UI) to enforce access. Ported from an earlier Node/TS version with the same HTTP contract |
+| DB | PostgreSQL 16 (Cloud SQL in prod), SQL migrations with Flyway | brief requires a **relational DB with migrations**; Firestore is not relational, so it is not used |
+| Tests | JUnit 5 + AssertJ + MockMvc against a real Postgres 16 (Testcontainers) | version/alert rules are DB-transactional; mocking the DB would test the mock |
 
 ## Repository layout and ownership
 
 ```
-api/            Node/TS API            (owner: api workstream)
-  migrations/   node-pg-migrate SQL migrations
-  src/          server code
-  test/         vitest tests
-  scripts/      seed + load-sample-claims
+api/            Spring Boot API        (owner: api workstream, incl. api/Dockerfile and api/.dockerignore)
+  src/main/java/                     server code (domain/ = the pure rules: parsing, versions, alerts, money)
+  src/main/resources/db/migration/   Flyway SQL migrations
+  src/test/java/                     JUnit tests (unit, Testcontainers integration, golden, HTTP/access control)
 app/            Flutter app            (owner: app workstream)
 infra/          terraform/, firebase-emulator/, nginx/   (owner: infra workstream)
 .github/        CI                     (owner: infra workstream)
-docker-compose.yml, firebase.json, .firebaserc, api/Dockerfile, app/Dockerfile, */.dockerignore   (owner: infra)
+docker-compose.yml, firebase.json, .firebaserc, app/Dockerfile, app/.dockerignore   (owner: infra)
 data/           reference + sample claim files (read-only, CRLF, byte-for-byte)
 docs/SPEC.md    this file
 ```
 
 ## API process contract (infra relies on this)
 
-- `cd api && npm ci && npm run build` → compiles to `api/dist/`.
-- `npm run migrate` → runs migrations up (needs `DATABASE_URL`).
-- `npm run seed` → idempotent: upserts brokerages, groups, policy years, members, lasers, app users from `DATA_DIR`
-  (default `../data`, in Docker `/data`), and if `FIREBASE_AUTH_EMULATOR_HOST` is set (or `SEED_FIREBASE_USERS=true`)
-  creates/updates the Firebase Auth users with password `SEED_PASSWORD` (default `Password123!`, emulator only: a
-  real Firebase project needs an explicit `SEED_PASSWORD`), always with `emailVerified: true`.
-- `npm run load-sample` → uploads every file in `$DATA_DIR/claims` in file-name order through the same ingest code
-  as the HTTP upload (dev convenience, not run by default).
-- `npm start` → `node dist/src/server.js` (or equivalent), listens on `PORT` (default 8080).
-- `npm run start:docker` → migrate, seed, then `exec node dist/src/server.js` (single entrypoint for compose; `exec`
-  so the SIGTERM npm forwards reaches node, which drains requests and closes the pool).
-- `npm test` → vitest; needs `DATABASE_URL` pointing at a disposable Postgres (tests create/truncate their own schema).
-- Env: `DATABASE_URL`, `PORT`, `DATA_DIR`, `FIREBASE_AUTH_EMULATOR_HOST` (e.g. `firebase:9099`),
-  `GCLOUD_PROJECT` / `FIREBASE_PROJECT_ID` (`demo-stoploss` locally), `CORS_ORIGINS` (comma list, dev only),
-  `SEED_PASSWORD`, `SEED_FIREBASE_USERS`.
-- `GET /healthz` → `200 {"ok":true}` (no auth) — used by compose healthcheck and Cloud Run.
+- Build and test: `cd api && ./mvnw -B verify` compiles and runs every test (JUnit; the integration tests start
+  Postgres 16 with Testcontainers, so a Docker daemon is needed; nothing else, no `DATABASE_URL`). The jar is
+  `api/target/stoploss-api.jar`. `./mvnw -B package -DskipTests` builds it without Docker.
+- Image: `api/Dockerfile` (context `api/`) builds the jar itself from a clean checkout (Temurin 25 JDK + Maven wrapper),
+  runs on `eclipse-temurin:25-jre` as a non-root user, contains `curl`, sets `PORT=8080`, `DATA_DIR=/data` and
+  `-XX:MaxRAMPercentage=75`, and has `ENTRYPOINT ["java","-jar","/app/stoploss-api.jar"]`, so arguments pass through
+  (`docker compose run api --app.mode=load-sample`).
+- Serve: `java -jar stoploss-api.jar` (no arguments). Flyway migrates on startup (`db/migration`), unless
+  `SPRING_FLYWAY_ENABLED=false` (the Cloud Run service, where only the migration job migrates). With
+  `SEED_ON_STARTUP=true` the seed (below) runs next, still before the server accepts connections, so a passing
+  healthcheck means the seed is done. Listens on `PORT` (default 8080).
+- One-shot modes, `--app.mode=<mode>` (or env `APP_MODE`): no web server, `SEED_ON_STARTUP` ignored, exit 0 on success
+  and 1 on failure (2 for an unknown mode).
+  - `migrate`: Flyway only. Always migrates, even with `SPRING_FLYWAY_ENABLED=false` in the environment (the Cloud
+    Run migration job).
+  - `seed`: Flyway (unless disabled), then the idempotent seed: under an advisory lock, upserts brokerages, groups,
+    policy years, members, lasers and app users from `DATA_DIR`; then, if `FIREBASE_AUTH_EMULATOR_HOST` is set or
+    `SEED_FIREBASE_USERS=true`, creates/updates the Firebase Auth users with password `SEED_PASSWORD` (default
+    `Password123!` only with the emulator; a real Firebase project needs an explicit `SEED_PASSWORD`), always
+    `emailVerified: true`, retrying for ~30 s while the emulator starts.
+  - `load-sample`: Flyway (unless disabled), then ingests every `*.csv` in `$DATA_DIR/claims` in file-name order
+    through the same code as `POST /api/uploads` (uploaded_by `load-sample`; dev convenience, safe to re-run).
+- Env:
+  | Name | Default | |
+  |---|---|---|
+  | `PORT` | `8080` | |
+  | `SPRING_DATASOURCE_URL` | none (required) | e.g. `jdbc:postgresql://db:5432/stoploss`; Cloud SQL: `jdbc:postgresql:///stoploss?cloudSqlInstance=<project:region:instance>&socketFactory=com.google.cloud.sql.postgres.SocketFactory` |
+  | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | none | |
+  | `SPRING_FLYWAY_ENABLED` | `true` | `false`: no migration at startup (`--app.mode=migrate` still migrates) |
+  | `DATA_DIR` | `../data` (`/data` in the image) | reference CSVs and `claims/` |
+  | `FIREBASE_AUTH_EMULATOR_HOST` | unset | e.g. `firebase:9099`; only allowed with a `demo-*` project id, else the process refuses to start |
+  | `FIREBASE_PROJECT_ID` | `GCLOUD_PROJECT`, else `GOOGLE_CLOUD_PROJECT`, else `demo-stoploss` | the real project id in prod (token audience) |
+  | `CORS_ORIGINS` | none | comma list of browser origins (dev only; same origin in prod) |
+  | `SEED_ON_STARTUP` | `false` | `true`: seed before serving (compose) |
+  | `SEED_PASSWORD`, `SEED_FIREBASE_USERS` | see seed above | |
+- `GET /healthz` → `200 {"ok":true}`, no auth, no DB access (compose: `curl -fsS http://localhost:8080/healthz`).
+- Shutdown: SIGTERM → graceful (stops accepting, drains in-flight requests for up to 10 s, closes the pool). The JVM
+  then exits with 143, the usual "terminated by SIGTERM" status.
+- Prod credentials: Application Default Credentials, resolved lazily: verifying ID tokens needs only the project id,
+  and only seeding real Firebase users needs credentials.
 
 ## Seed logins (password `Password123!`)
 
@@ -66,8 +89,10 @@ GC and GD belong to no brokerage (analyst-only).
   brokerage — not client claims. Unknown user → `403`. Because users are matched by email, the token's email must be
   verified (`email_verified`), else `403`.
 - The emulator (unsigned tokens) is honoured only when the project id is `demo-*`; otherwise the API refuses to start.
-- Token verification is injected (`createApp({ verifyToken })`) so tests use a fake verifier; the fake must never be
-  reachable in production code paths.
+  In emulator mode the Java Admin SDK also looks the user up in the emulator on every verification, so tokens of
+  deleted or disabled emulator accounts get 401.
+- Token verification is a `TokenVerifier` Spring bean (firebase-admin in `FirebaseConfig`); tests replace it with a
+  fake (`@TestBean`) that lives only in the test sources, so it is never reachable in production code paths.
 - Broker scoping is applied **in SQL** (every group-scoped query joins through the caller's visible groups). A broker
   asking for another brokerage's group/member/alert gets `404` (do not leak existence). Write endpoints for brokers
   → `403`.
@@ -85,7 +110,7 @@ Files
 - Handle UTF-8 BOM, CRLF/LF, quoted fields (`"14,455.00"`). GB files mix line endings (LF after the `#` comment
   line, CRLF elsewhere), so split physical lines before parsing rather than auto-detecting a record delimiter.
 - "File-name order" = plain code-unit order (`GA_2026-04.csv` before `GA_2026-04_resend.csv`, since `.` < `_`).
-  Never a locale/natural sort: JS `localeCompare` gets this pair backwards.
+  Never a locale/natural sort: locale collation (JS `localeCompare`, `java.text.Collator`) gets this pair backwards.
 - **Row number** reported = physical line number in the file (1-based, header and comment lines counted), i.e.
   what the analyst sees in a text editor.
 - Summary rows (first cell `TRAILER`/`TOTAL`/`SUMMARY`, case-insensitive) are skipped and counted as `summary`,
@@ -137,7 +162,7 @@ Concurrency & idempotency
   same group serialise and cannot corrupt totals. Re-uploading the same file is processed again and, by the version
   rules, changes nothing (every row `unchanged`). The file's sha256 is recorded.
 
-## Database (migrations in `api/migrations`)
+## Database (Flyway migrations in `api/src/main/resources/db/migration`)
 
 `brokerage(id, name)` · `employer_group(id text pk, name, brokerage_id null)` · `policy_year(id serial, group_id,
 start_date, end_date, specific_deductible_cents bigint, unique(group_id,start_date))` · `member(id text pk, group_id,
