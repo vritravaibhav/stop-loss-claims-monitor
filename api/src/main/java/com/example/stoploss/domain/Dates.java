@@ -83,6 +83,6 @@ public final class Dates {
 
   /** Today's date in UTC as YYYY-MM-DD. */
   public static String today(Clock clock) {
-    return LocalDate.now(clock.withZone(ZoneOffset.UTC)).toString();
+    return LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC).toString();
   }
 }
