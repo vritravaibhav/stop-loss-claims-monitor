@@ -1,0 +1,21 @@
+{
+  "group": { "id": "GA", "name": "Group A" },
+  "policyYear": { "id": 1, "startDate": "2026-01-01", "endDate": "2026-12-31", "deductible": 50000 },
+  "members": [
+    {
+      "memberId": "A-0077", "firstName": "Priya", "lastName": "Shah", "relationship": "Employee",
+      "spend": 61234.56, "deductible": 50000, "hasLaser": false, "pctUsed": 122.5,
+      "excess": 11234.56, "claimCount": 9, "alertThresholds": [50, 75, 100]
+    },
+    {
+      "memberId": "A-0007", "firstName": "Ken", "lastName": "Ito", "relationship": "Spouse",
+      "spend": 60000, "deductible": 120000, "hasLaser": true, "pctUsed": 50,
+      "excess": 0, "claimCount": 4, "alertThresholds": [50]
+    },
+    {
+      "memberId": "A-0001", "firstName": "Ryan", "lastName": "Johnson", "relationship": "Employee",
+      "spend": 0, "deductible": 50000, "hasLaser": false, "pctUsed": 0,
+      "excess": 0, "claimCount": 0, "alertThresholds": []
+    }
+  ]
+}

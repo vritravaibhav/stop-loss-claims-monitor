@@ -1,0 +1,1 @@
+{ "email": "broker.a@example.test", "role": "broker", "brokerage": { "id": 1, "name": "Brokerage A" } }

@@ -1,0 +1,25 @@
+name: stoploss_monitor
+description: "Stop-loss claims monitor: analyst and broker web client."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^13.3.1
+  firebase_auth: ^7.0.1
+  firebase_core: ^5.1.0
+  http: ^1.6.0
+  intl: ^0.20.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,15 @@
+[
+  {
+    "id": 6, "filename": "GZ_2026-01.csv", "groupId": "GZ", "layout": null, "status": "rejected",
+    "rejectionReason": "Unknown group GZ", "uploadedBy": "analyst@example.test",
+    "uploadedAt": "2026-11-02T09:16:00Z", "sha256": "00",
+    "counts": { "rows": 0, "applied": 0, "unchanged": 0, "olderIgnored": 0, "summary": 0, "errors": 0 }
+  },
+  {
+    "id": 5, "filename": "GA_2026-04_resend.csv", "groupId": "GA", "layout": "tpa_one", "status": "processed",
+    "rejectionReason": null, "uploadedBy": "analyst@example.test",
+    "uploadedAt": "2026-11-02T09:15:00Z", "sha256": "9f",
+    "counts": { "rows": 42, "applied": 37, "unchanged": 1, "olderIgnored": 1, "summary": 1, "errors": 2 },
+    "alertsRaised": []
+  }
+]

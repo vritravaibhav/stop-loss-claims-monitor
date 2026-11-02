@@ -1,0 +1,14 @@
+{
+  "id": 6,
+  "filename": "GZ_2026-01.csv",
+  "groupId": null,
+  "layout": null,
+  "status": "rejected",
+  "rejectionReason": "Unknown group GZ",
+  "uploadedBy": "analyst@example.test",
+  "uploadedAt": "2026-11-02T09:16:00Z",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "counts": { "rows": 0, "applied": 0, "unchanged": 0, "olderIgnored": 0, "summary": 0, "errors": 0 },
+  "errors": [],
+  "alertsRaised": []
+}
