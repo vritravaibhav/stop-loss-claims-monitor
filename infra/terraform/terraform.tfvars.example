@@ -1,0 +1,10 @@
+# cp terraform.tfvars.example terraform.tfvars   (terraform.tfvars is not secret, but is per-environment)
+project_id        = "stoploss-monitor-dv"
+region            = "us-central1"
+github_repository = "your-org/stoploss-monitor"
+api_image         = "us-central1-docker.pkg.dev/stoploss-monitor-dv/stoploss/api:<git-sha>"
+
+# Sizing (defaults shown)
+# db_tier              = "db-f1-micro"
+# db_availability_type = "ZONAL"
+# api_max_instances    = 2

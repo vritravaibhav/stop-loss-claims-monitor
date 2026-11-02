@@ -1,0 +1,109 @@
+# Local stack: `docker compose up --build`, then open http://localhost:8081
+#
+#   db        Postgres 16 (dev database "stoploss", plus "stoploss_test" for `make test-api`)
+#   firebase  Firebase Auth emulator (project demo-stoploss) + Emulator UI on :4000
+#   api       Node/TS API: migrate + seed (DB rows and emulator users), then serve on :8080
+#   web       nginx serving the Flutter web build on :8081 and proxying /api to the api
+#
+# Seed logins (password Password123!): analyst@example.test, broker.a@example.test,
+# broker.b@example.test. Load the sample claim files with `make load-sample`.
+#
+# Every port is bound to 127.0.0.1: the auth emulator hands out valid ID tokens for any
+# account, so the stack must not be reachable from the network.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stoploss
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Not 5432, to avoid clashing with a Postgres already running on the host.
+      - "127.0.0.1:${DB_HOST_PORT:-55433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stoploss"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  firebase:
+    build:
+      context: ./infra/firebase-emulator
+    ports:
+      - "127.0.0.1:9099:9099" # auth emulator: the browser signs in against it directly
+      - "127.0.0.1:4000:4000" # Emulator UI
+      - "127.0.0.1:4500:4500" # Emulator UI log stream
+    healthcheck:
+      # node:22-slim has no curl/wget; Node 22 has fetch. The emulator binds IPv4 only and
+      # localhost resolves to ::1 first, so 127.0.0.1 avoids relying on Node's fallback.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9099/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  api:
+    build:
+      context: ./api
+    command: ["npm", "run", "start:docker"]
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/stoploss
+      PORT: "8080"
+      DATA_DIR: /data
+      FIREBASE_AUTH_EMULATOR_HOST: firebase:9099
+      FIREBASE_PROJECT_ID: demo-stoploss
+      GCLOUD_PROJECT: demo-stoploss
+      SEED_PASSWORD: ${SEED_PASSWORD:-Password123!}
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      firebase:
+        condition: service_healthy
+        # Emulator users live in memory. If compose restarts the emulator, restart the api
+        # too so its seed step recreates them.
+        restart: true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
+
+  web:
+    build:
+      context: ./app
+      args:
+        USE_AUTH_EMULATOR: "true"
+        AUTH_EMULATOR_HOST: localhost
+        AUTH_EMULATOR_PORT: "9099"
+        FIREBASE_PROJECT_ID: demo-stoploss
+        API_BASE_URL: "" # same origin: nginx proxies /api
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:8081:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  pgdata:
