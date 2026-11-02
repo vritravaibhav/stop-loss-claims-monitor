@@ -61,7 +61,7 @@ docs/SPEC.md    this file
   | `SPRING_FLYWAY_ENABLED` | `true` | `false`: no migration at startup (`--app.mode=migrate` still migrates) |
   | `DATA_DIR` | `../data` (`/data` in the image) | reference CSVs and `claims/` |
   | `FIREBASE_AUTH_EMULATOR_HOST` | unset | e.g. `firebase:9099`; only allowed with a `demo-*` project id, else the process refuses to start |
-  | `FIREBASE_PROJECT_ID` | `GCLOUD_PROJECT`, else `GOOGLE_CLOUD_PROJECT`, else `demo-stoploss` | the real project id in prod (token audience) |
+  | `FIREBASE_PROJECT_ID` | `GCLOUD_PROJECT`, else `GOOGLE_CLOUD_PROJECT`, else unset | the real project id in prod (token audience). No `demo-*` fallback: the emulator needs it set explicitly |
   | `CORS_ORIGINS` | none | comma list of browser origins (dev only; same origin in prod) |
   | `SEED_ON_STARTUP` | `false` | `true`: seed before serving (compose) |
   | `SEED_PASSWORD`, `SEED_FIREBASE_USERS` | see seed above | |

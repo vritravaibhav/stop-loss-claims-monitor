@@ -38,11 +38,10 @@ public class FirebaseConfig {
   FirebaseApp firebaseApp(AppSettings settings) {
     AppSettings.assertSafeEmulatorConfig(settings.firebaseEmulatorHost(), settings.firebaseProjectId());
     GoogleCredentials credentials = settings.emulator() ? emulatorCredentials() : new LazyApplicationDefaultCredentials(List.of());
-    FirebaseOptions options = FirebaseOptions.builder()
-        .setProjectId(settings.firebaseProjectId())
-        .setCredentials(credentials)
-        .build();
-    return FirebaseApp.initializeApp(options, "stoploss-api");
+    FirebaseOptions.Builder options = FirebaseOptions.builder().setCredentials(credentials);
+    // Unset (only possible outside the emulator): firebase-admin falls back to the credentials' project.
+    if (settings.firebaseProjectId() != null) options.setProjectId(settings.firebaseProjectId());
+    return FirebaseApp.initializeApp(options.build(), "stoploss-api");
   }
 
   /** The production verifier. Tests replace this bean; nothing else in main code builds a {@link TokenVerifier}. */

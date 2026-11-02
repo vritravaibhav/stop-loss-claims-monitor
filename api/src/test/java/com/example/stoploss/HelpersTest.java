@@ -58,7 +58,10 @@ class HelpersTest {
       assertThat(AppSettings.firebaseProjectId(null, "b", "c")).isEqualTo("b");
       assertThat(AppSettings.firebaseProjectId("a", "b", null)).isEqualTo("a");
       assertThat(AppSettings.firebaseProjectId("", " ", "c")).isEqualTo("c");
-      assertThat(AppSettings.firebaseProjectId(null, null, null)).isEqualTo("demo-stoploss");
+      // No silent demo-* default: with the emulator host set and no explicit project id, startup must fail.
+      assertThat(AppSettings.firebaseProjectId(null, null, null)).isNull();
+      assertThatThrownBy(() -> AppSettings.assertSafeEmulatorConfig("firebase:9099", AppSettings.firebaseProjectId(null, " ", null)))
+          .hasMessageContaining("unset");
     }
   }
 

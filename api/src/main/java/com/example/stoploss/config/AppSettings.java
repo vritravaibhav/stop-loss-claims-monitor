@@ -15,7 +15,8 @@ import org.springframework.core.env.Environment;
  * @param seedFirebaseUsers {@code SEED_FIREBASE_USERS=true}: seed Firebase users even without the emulator
  * @param firebaseEmulatorHost {@code FIREBASE_AUTH_EMULATOR_HOST} (empty: real Firebase)
  * @param firebaseProjectId {@code FIREBASE_PROJECT_ID}, else {@code GCLOUD_PROJECT}, else {@code GOOGLE_CLOUD_PROJECT},
- *     else {@code demo-stoploss}
+ *     else null. Deliberately no default: the emulator guard must only pass for a {@code demo-*} id that was set
+ *     explicitly, never for a fallback
  * @param mode {@code app.mode}: {@code migrate}, {@code seed} or {@code load-sample}; null for the web server
  */
 public record AppSettings(
@@ -27,8 +28,6 @@ public record AppSettings(
     String firebaseEmulatorHost,
     String firebaseProjectId,
     String mode) {
-
-  public static final String DEFAULT_PROJECT_ID = "demo-stoploss";
 
   public static AppSettings from(Environment env) {
     return new AppSettings(
@@ -53,10 +52,10 @@ public record AppSettings(
     return Arrays.stream(value.split(",")).map(String::strip).filter(s -> !s.isEmpty()).toList();
   }
 
-  /** First non-blank of the candidates, else {@value #DEFAULT_PROJECT_ID}. */
+  /** First non-blank of the candidates, else null. */
   public static String firebaseProjectId(String... candidates) {
     for (String c : candidates) if (c != null && !c.isBlank()) return c.strip();
-    return DEFAULT_PROJECT_ID;
+    return null;
   }
 
   /**
