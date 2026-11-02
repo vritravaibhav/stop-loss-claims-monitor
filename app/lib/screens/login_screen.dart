@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
+import '../config.dart';
 import '../services/auth_service.dart';
 
 /// The seeded accounts (docs/SPEC.md "Seed logins").
@@ -165,8 +166,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                _DemoLogins(onPick: _fill),
+                // Seeded demo accounts only exist in the Auth emulator; never advertise a password in a real build.
+                if (AppConfig.useAuthEmulator) ...[
+                  const SizedBox(height: 16),
+                  _DemoLogins(onPick: _fill),
+                ],
               ],
             ),
           ),
