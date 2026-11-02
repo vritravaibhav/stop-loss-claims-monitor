@@ -78,7 +78,10 @@ Files
   whitespace-trimmed. Unknown header → whole file rejected.
   - Layout `tpa_one` (Group A): `Claim ID,Adj Seq,Member ID,Service Date,Paid Date,Paid Amount,Status,Diagnosis Code`
   - Layout `tpa_two` (Group B): `claim_number,version,member,dos,paid_dt,amount,claim_status`
-- Handle UTF-8 BOM, CRLF/LF, quoted fields (`"14,455.00"`).
+- Handle UTF-8 BOM, CRLF/LF, quoted fields (`"14,455.00"`). GB files mix line endings (LF after the `#` comment
+  line, CRLF elsewhere), so split physical lines before parsing rather than auto-detecting a record delimiter.
+- "File-name order" = plain code-unit order (`GA_2026-04.csv` before `GA_2026-04_resend.csv`, since `.` < `_`).
+  Never a locale/natural sort: JS `localeCompare` gets this pair backwards.
 - **Row number** reported = physical line number in the file (1-based, header and comment lines counted), i.e.
   what the analyst sees in a text editor.
 - Summary rows (first cell `TRAILER`/`TOTAL`/`SUMMARY`, case-insensitive) are skipped and counted as `summary`,
