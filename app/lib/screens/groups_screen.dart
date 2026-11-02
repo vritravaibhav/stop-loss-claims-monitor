@@ -3,19 +3,27 @@ import 'package:flutter/material.dart';
 import '../app_scope.dart';
 import '../format.dart';
 import '../models.dart';
-import '../widgets/account_menu.dart';
 import '../widgets/common.dart';
 import 'group_spend_screen.dart';
 
+/// Groups tab: one card per group visible to the user. A tab body, not a
+/// page: the home shell supplies the app bar and its Refresh button.
 class GroupsScreen extends StatefulWidget {
-  const GroupsScreen({super.key});
+  const GroupsScreen({super.key, this.reloadSignal});
+
+  /// Fired by the shell's Refresh button.
+  final Listenable? reloadSignal;
 
   @override
   State<GroupsScreen> createState() => _GroupsScreenState();
 }
 
-class _GroupsScreenState extends State<GroupsScreen> {
+class _GroupsScreenState extends State<GroupsScreen>
+    with ReloadOnSignal<GroupsScreen> {
   Future<List<Group>>? _future;
+
+  @override
+  Listenable? get reloadSignal => widget.reloadSignal;
 
   @override
   void didChangeDependencies() {
@@ -23,47 +31,31 @@ class _GroupsScreenState extends State<GroupsScreen> {
     _future ??= context.api.groups();
   }
 
-  void _reload() => setState(() {
+  @override
+  void reload() => setState(() {
     _future = context.api.groups();
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Groups'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: _reload,
-          ),
-          const AccountMenu(),
-        ],
-      ),
-      body: AsyncView<List<Group>>(
-        future: _future,
-        onRetry: _reload,
-        builder: (context, groups) {
-          if (groups.isEmpty) {
-            return const EmptyState(
-              icon: Icons.groups_outlined,
-              message: 'No groups are visible to you.',
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: groups.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) => ContentWidth(
-              maxWidth: 1000,
-              child: GroupCard(group: groups[i]),
-            ),
-          );
-        },
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AsyncView<List<Group>>(
+    future: _future,
+    onRetry: reload,
+    builder: (context, groups) {
+      if (groups.isEmpty) {
+        return const EmptyState(
+          icon: Icons.groups_outlined,
+          message: 'No groups are visible to you.',
+        );
+      }
+      return ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: groups.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        itemBuilder: (context, i) =>
+            ContentWidth(maxWidth: 1000, child: GroupCard(group: groups[i])),
+      );
+    },
+  );
 }
 
 class GroupCard extends StatelessWidget {

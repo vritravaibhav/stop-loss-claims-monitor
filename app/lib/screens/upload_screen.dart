@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../format.dart';
 import '../upload_controller.dart';
-import '../widgets/account_menu.dart';
 import '../widgets/common.dart';
 import '../widgets/upload_result_view.dart';
 
@@ -19,8 +18,9 @@ Future<List<PickedFile>> pickCsvFiles() async {
   return [for (final f in picked) PickedFile(f.name, await f.readAsBytes())];
 }
 
-/// Analyst-only: upload claim files sequentially in file-name order and show
-/// each file's result as it comes back.
+/// Analyst-only Upload tab: upload claim files sequentially in file-name
+/// order and show each file's result as it comes back. A tab body, not a
+/// page: the home shell supplies the app bar.
 class UploadScreen extends StatelessWidget {
   const UploadScreen({
     super.key,
@@ -54,102 +54,97 @@ class UploadScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Upload claim files'),
-        actions: const [AccountMenu()],
-      ),
-      body: ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) {
-          final items = controller.items;
-          final busy = controller.busy;
-          final queued = items
-              .where((i) => i.state == UploadItemState.queued)
-              .length;
-          final retryable = items.any(
-            (i) =>
-                i.state == UploadItemState.failed ||
-                i.state == UploadItemState.skipped,
-          );
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final items = controller.items;
+        final busy = controller.busy;
+        final queued = items
+            .where((i) => i.state == UploadItemState.queued)
+            .length;
+        final retryable = items.any(
+          (i) =>
+              i.state == UploadItemState.failed ||
+              i.state == UploadItemState.skipped,
+        );
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              ContentWidth(
-                maxWidth: 1000,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Choose one or more TPA claim files (.csv). They '
-                              'are uploaded one at a time in file-name order; '
-                              'each file is processed on its own, and '
-                              're-uploading a file changes no totals.',
-                            ),
-                            const SizedBox(height: 16),
-                            Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: busy
-                                      ? null
-                                      : () => _choose(context),
-                                  icon: const Icon(Icons.folder_open),
-                                  label: const Text('Choose CSV files'),
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            ContentWidth(
+              maxWidth: 1000,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Upload claim files',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Choose one or more TPA claim files (.csv). They '
+                            'are uploaded one at a time in file-name order; '
+                            'each file is processed on its own, and '
+                            're-uploading a file changes no totals.',
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: busy ? null : () => _choose(context),
+                                icon: const Icon(Icons.folder_open),
+                                label: const Text('Choose CSV files'),
+                              ),
+                              if (queued > 0)
+                                FilledButton.icon(
+                                  onPressed: busy ? null : controller.uploadAll,
+                                  icon: const Icon(Icons.upload),
+                                  label: Text(
+                                    'Upload $queued '
+                                    '${queued == 1 ? 'file' : 'files'}',
+                                  ),
                                 ),
-                                if (queued > 0)
-                                  FilledButton.icon(
-                                    onPressed: busy
-                                        ? null
-                                        : controller.uploadAll,
-                                    icon: const Icon(Icons.upload),
-                                    label: Text(
-                                      'Upload $queued '
-                                      '${queued == 1 ? 'file' : 'files'}',
-                                    ),
-                                  ),
-                                if (retryable && !busy)
-                                  FilledButton.tonalIcon(
-                                    onPressed: controller.retryRemaining,
-                                    icon: const Icon(Icons.replay),
-                                    label: const Text('Retry remaining'),
-                                  ),
-                                if (items.isNotEmpty && !busy)
-                                  TextButton(
-                                    onPressed: controller.clear,
-                                    child: const Text('Clear'),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              if (retryable && !busy)
+                                FilledButton.tonalIcon(
+                                  onPressed: controller.retryRemaining,
+                                  icon: const Icon(Icons.replay),
+                                  label: const Text('Retry remaining'),
+                                ),
+                              if (items.isNotEmpty && !busy)
+                                TextButton(
+                                  onPressed: controller.clear,
+                                  child: const Text('Clear'),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    if (items.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _Progress(controller: controller),
-                      const SizedBox(height: 8),
-                      for (final item in items)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _UploadItemCard(item: item),
-                        ),
-                    ],
+                  ),
+                  if (items.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _Progress(controller: controller),
+                    const SizedBox(height: 8),
+                    for (final item in items)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _UploadItemCard(item: item),
+                      ),
                   ],
-                ),
+                ],
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

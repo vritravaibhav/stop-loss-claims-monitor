@@ -7,16 +7,25 @@ import '../widgets/account_menu.dart';
 import '../widgets/common.dart';
 import '../widgets/upload_result_view.dart';
 
-/// Analyst-only: every upload, newest first (audit of who loaded what).
+/// Analyst-only History tab: every upload, newest first (audit of who loaded
+/// what). A tab body, not a page: the home shell supplies the app bar and its
+/// Refresh button. Each upload opens as a full page.
 class UploadHistoryScreen extends StatefulWidget {
-  const UploadHistoryScreen({super.key});
+  const UploadHistoryScreen({super.key, this.reloadSignal});
+
+  /// Fired by the shell's Refresh button.
+  final Listenable? reloadSignal;
 
   @override
   State<UploadHistoryScreen> createState() => _UploadHistoryScreenState();
 }
 
-class _UploadHistoryScreenState extends State<UploadHistoryScreen> {
+class _UploadHistoryScreenState extends State<UploadHistoryScreen>
+    with ReloadOnSignal<UploadHistoryScreen> {
   Future<List<UploadResult>>? _future;
+
+  @override
+  Listenable? get reloadSignal => widget.reloadSignal;
 
   @override
   void didChangeDependencies() {
@@ -24,56 +33,44 @@ class _UploadHistoryScreenState extends State<UploadHistoryScreen> {
     _future ??= context.api.uploads();
   }
 
-  void _reload() => setState(() {
+  @override
+  void reload() => setState(() {
     _future = context.api.uploads();
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Upload history'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: _reload,
-          ),
-          const AccountMenu(),
-        ],
-      ),
-      body: AsyncView<List<UploadResult>>(
-        future: _future,
-        onRetry: _reload,
-        builder: (context, uploads) {
-          if (uploads.isEmpty) {
-            return const EmptyState(
-              icon: Icons.history,
-              message: 'No files have been uploaded yet.',
-            );
-          }
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              ContentWidth(
-                maxWidth: 1000,
-                child: Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < uploads.length; i++) ...[
-                        if (i > 0) const Divider(),
-                        _UploadTile(upload: uploads[i], scheme: scheme),
-                      ],
+    return AsyncView<List<UploadResult>>(
+      future: _future,
+      onRetry: reload,
+      builder: (context, uploads) {
+        if (uploads.isEmpty) {
+          return const EmptyState(
+            icon: Icons.history,
+            message: 'No files have been uploaded yet.',
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            ContentWidth(
+              maxWidth: 1000,
+              child: Card(
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (var i = 0; i < uploads.length; i++) ...[
+                      if (i > 0) const Divider(),
+                      _UploadTile(upload: uploads[i], scheme: scheme),
                     ],
-                  ),
+                  ],
                 ),
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

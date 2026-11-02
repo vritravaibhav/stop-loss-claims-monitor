@@ -32,6 +32,46 @@ void showMessage(BuildContext context, String message) {
   messenger.showSnackBar(SnackBar(content: Text(message)));
 }
 
+/// Fired by the home shell's Refresh button; the tab on screen reloads.
+class ReloadSignal extends ChangeNotifier {
+  void fire() => notifyListeners();
+}
+
+/// Calls [reload] each time [reloadSignal] fires, so a tab keeps its own
+/// state (filters, search) and its stale-while-reloading view on refresh.
+mixin ReloadOnSignal<T extends StatefulWidget> on State<T> {
+  Listenable? get reloadSignal;
+
+  void reload();
+
+  Listenable? _subscribed;
+
+  void _subscribe() {
+    final signal = reloadSignal;
+    if (identical(signal, _subscribed)) return;
+    _subscribed?.removeListener(reload);
+    _subscribed = signal?..addListener(reload);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(covariant T oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _subscribe();
+  }
+
+  @override
+  void dispose() {
+    _subscribed?.removeListener(reload);
+    super.dispose();
+  }
+}
+
 /// [FutureBuilder] with the app's loading and error states. While a reload is
 /// in flight the previous data stays visible under a thin progress bar.
 class AsyncView<T> extends StatelessWidget {

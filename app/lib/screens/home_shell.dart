@@ -2,177 +2,164 @@ import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
 import '../upload_controller.dart';
+import '../widgets/account_menu.dart';
+import '../widgets/common.dart';
 import 'alerts_screen.dart';
 import 'groups_screen.dart';
 import 'upload_history_screen.dart';
 import 'upload_screen.dart';
 
-class _Destination {
-  const _Destination(this.label, this.icon, this.selectedIcon, this.build);
+class _TabSpec {
+  const _TabSpec(
+    this.label,
+    this.icon,
+    this.build, {
+    this.refreshable = true,
+    this.showsUploadBadge = false,
+  });
 
   final String label;
   final IconData icon;
-  final IconData selectedIcon;
   final WidgetBuilder build;
+
+  /// Whether the app bar offers Refresh while this tab is showing.
+  final bool refreshable;
+
+  /// Dot on the tab while a batch of files is uploading.
+  final bool showsUploadBadge;
 }
 
-/// Signed-in layout: NavigationRail on wide screens, NavigationBar on narrow
-/// ones. Each tab has its own nested Navigator so drill-downs keep the
-/// navigation visible. Upload and History exist only for analysts (the API
+/// Signed-in layout, the same at every width: one app bar with the title,
+/// Refresh, the account menu and a row of top tabs. There is no rail, drawer
+/// or side panel; group spend, member and upload details are pushed as full
+/// pages over the shell. Upload and History exist only for analysts (the API
 /// enforces this too; hiding them is just UX).
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
-  static const railBreakpoint = 640.0;
+  /// Below this width the tabs start at the left edge and scroll sideways;
+  /// above it they are centred. They are never squeezed, so every label fits.
+  static const narrowBreakpoint = 600.0;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
-  int _index = 0;
-  GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+class _HomeShellState extends State<HomeShell>
+    with SingleTickerProviderStateMixin {
+  final _reload = ReloadSignal();
   UploadController? _uploads;
+  TabController? _controller;
+  List<_TabSpec> _tabs = const [];
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _uploads ??= UploadController(context.api);
+    // AuthGate keys the shell by user and role, so the tab set is fixed for
+    // the life of this state.
+    if (_controller == null) {
+      _tabs = _tabsFor(analyst: context.isAnalyst);
+      _controller = TabController(length: _tabs.length, vsync: this)
+        ..addListener(_onTabChanged);
+    }
   }
 
   @override
   void dispose() {
+    _controller?.dispose();
     _uploads?.dispose();
+    _reload.dispose();
     super.dispose();
   }
 
-  List<_Destination> _destinations(bool analyst) => [
-    _Destination(
+  // The body swaps as soon as a tab is chosen; nothing slides across.
+  void _onTabChanged() => setState(() {});
+
+  List<_TabSpec> _tabsFor({required bool analyst}) => [
+    _TabSpec(
       'Groups',
       Icons.groups_outlined,
-      Icons.groups,
-      (_) => const GroupsScreen(),
+      (_) => GroupsScreen(reloadSignal: _reload),
     ),
-    _Destination(
+    _TabSpec(
       'Alerts',
       Icons.notifications_outlined,
-      Icons.notifications,
-      (_) => const AlertsScreen(),
+      (_) => AlertsScreen(reloadSignal: _reload),
     ),
     if (analyst) ...[
-      _Destination(
+      _TabSpec(
         'Upload',
         Icons.upload_file_outlined,
-        Icons.upload_file,
         (_) => UploadScreen(controller: _uploads!),
+        refreshable: false,
+        showsUploadBadge: true,
       ),
-      _Destination(
+      _TabSpec(
         'History',
         Icons.history,
-        Icons.history,
-        (_) => const UploadHistoryScreen(),
+        (_) => UploadHistoryScreen(reloadSignal: _reload),
       ),
     ],
   ];
 
-  void _select(int index) {
-    if (index == _index) {
-      // Re-selecting the current tab returns to its first page.
-      _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-      return;
+  Widget _tab(_TabSpec spec) {
+    Widget icon = Icon(spec.icon, size: 20);
+    if (spec.showsUploadBadge) {
+      icon = ListenableBuilder(
+        listenable: _uploads!,
+        builder: (context, child) =>
+            Badge(isLabelVisible: _uploads!.busy, smallSize: 8, child: child),
+        child: icon,
+      );
     }
-    setState(() {
-      _index = index;
-      _navigatorKey = GlobalKey<NavigatorState>();
-    });
-  }
-
-  Widget _icon(_Destination d, {required bool selected}) {
-    final icon = Icon(selected ? d.selectedIcon : d.icon);
-    if (d.label != 'Upload') return icon;
-    return ListenableBuilder(
-      listenable: _uploads!,
-      builder: (context, _) =>
-          Badge(isLabelVisible: _uploads!.busy, smallSize: 8, child: icon),
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [icon, const SizedBox(width: 8), Text(spec.label)],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final destinations = _destinations(context.isAnalyst);
-    final index = _index.clamp(0, destinations.length - 1);
-    final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= HomeShell.railBreakpoint;
-    final destination = destinations[index];
+    final controller = _controller!;
+    final current = _tabs[controller.index];
+    final narrow =
+        MediaQuery.sizeOf(context).width < HomeShell.narrowBreakpoint;
+    final scheme = Theme.of(context).colorScheme;
 
-    final body = NavigatorPopHandler(
-      onPopWithResult: (_) => _navigatorKey.currentState?.maybePop(),
-      child: Navigator(
-        key: _navigatorKey,
-        onGenerateRoute: (settings) => MaterialPageRoute<void>(
-          settings: settings,
-          builder: destination.build,
-        ),
-      ),
-    );
-
-    if (!wide) {
-      return Scaffold(
-        body: body,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: index,
-          onDestinationSelected: _select,
-          destinations: [
-            for (final d in destinations)
-              NavigationDestination(
-                icon: _icon(d, selected: false),
-                selectedIcon: _icon(d, selected: true),
-                label: d.label,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            Icon(Icons.shield_outlined, color: scheme.primary),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text('Stop-loss monitor', overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
-      );
-    }
-
-    final extended = width >= 1280;
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      body: Row(
-        children: [
-          NavigationRail(
-            selectedIndex: index,
-            onDestinationSelected: _select,
-            extended: extended,
-            labelType: extended
-                ? NavigationRailLabelType.none
-                : NavigationRailLabelType.all,
-            leading: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: extended
-                  ? Row(
-                      children: [
-                        Icon(Icons.shield_outlined, color: scheme.primary),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Stop-loss monitor',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
-                    )
-                  : Icon(Icons.shield_outlined, color: scheme.primary),
+        actions: [
+          if (current.refreshable)
+            IconButton(
+              tooltip: 'Refresh',
+              icon: const Icon(Icons.refresh),
+              onPressed: _reload.fire,
             ),
-            destinations: [
-              for (final d in destinations)
-                NavigationRailDestination(
-                  icon: _icon(d, selected: false),
-                  selectedIcon: _icon(d, selected: true),
-                  label: Text(d.label),
-                ),
-            ],
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(child: body),
+          const AccountMenu(),
         ],
+        bottom: TabBar(
+          controller: controller,
+          isScrollable: true,
+          tabAlignment: narrow ? TabAlignment.start : TabAlignment.center,
+          tabs: [for (final spec in _tabs) _tab(spec)],
+        ),
+      ),
+      // A fresh state per tab visit, so switching tabs shows current data.
+      body: KeyedSubtree(
+        key: ValueKey(current.label),
+        child: Builder(builder: current.build),
       ),
     );
   }
